@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RTSE · 基准看板</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+
+<header>
+  <h1>RTSE <small>基准看板</small></h1>
+  <nav>
+    <a href="/">实时演示</a>
+    <a href="/lab">文件实验台</a>
+    <a href="/bench" class="on">基准看板</a>
+  </nav>
+</header>
+
+<main>
+  <div id="env" class="panel">
+    <h2>环境</h2>
+    <div class="stats" id="envStats"></div>
+  </div>
+
+  <div id="content"></div>
+</main>
+
+<script type="module">
+const el = (id) => document.getElementById(id);
+
+const info = await fetch("/api/info").then((r) => r.json()).catch(() => null);
+if (info) {
+  el("envStats").innerHTML = [
+    ["采样率", `${info.sample_rate / 1000}`, "kHz"],
+    ["STFT", `${info.n_fft}/${info.hop}`, ""],
+    ["帧移", info.frame_ms.toFixed(0), "ms"],
+    ["算法延迟", info.algo_latency_ms.toFixed(0), "ms"],
+    ["DSP 方法", info.dsp_methods.length, ""],
+    ["神经模型", info.nn_models.length, ""],
+  ].map(([k, v, u]) =>
+    `<div class="stat"><div class="k">${k}</div><div class="v">${v}<span class="u">${u}</span></div></div>`
+  ).join("");
+}
+
+const d = await fetch("/api/results").then((r) => r.json()).catch(() => ({ results: {} }));
+const keys = Object.keys(d.results || {});
+
+if (!keys.length) {
+  el("content").innerHTML = `
+    <div class="note warn">
+      <b>还没有评测结果。</b><br><br>
+      这个页面读取 <code>${d.dir ?? "results/"}</code> 下的 <code>*.json</code>。
+      完整的指标矩阵需要 Colab 侧产出的测试集与模型才能跑，属于 Phase 5。<br><br>
+      在此之前，可以到<a href="/lab">文件实验台</a>用自己的音频做单条对比 ——
+      那条路径不依赖任何 Colab 产物。
+    </div>
+
+    <div class="panel">
+      <h2>Phase 5 将填入的指标</h2>
+      <div class="tablewrap"><table>
+        <thead><tr><th>类别</th><th style="text-align:left">指标</th><th style="text-align:left">状态</th></tr></thead>
+        <tbody>
+          <tr><td>客观质量</td><td style="text-align:left">SI-SDR / SDR / SegSNR</td><td style="text-align:left" class="muted">✅ 已实现</td></tr>
+          <tr><td>可懂度</td><td style="text-align:left">STOI / ESTOI</td><td style="text-align:left" class="muted">✅ 已实现</td></tr>
+          <tr><td>感知质量</td><td style="text-align:left">PESQ-WB</td><td style="text-align:left" class="muted">⏸ Colab 侧计算（Windows 无 wheel）</td></tr>
+          <tr><td>无参考 MOS</td><td style="text-align:left">DNSMOS SIG/BAK/OVRL</td><td style="text-align:left" class="muted">⏸ 待下载 ONNX 模型</td></tr>
+          <tr><td>下游任务</td><td style="text-align:left"><b>ASR CER / WER</b></td><td style="text-align:left" class="muted">⏸ 待 Whisper 模型 + 测试集</td></tr>
+          <tr><td>复杂度</td><td style="text-align:left">参数量 / MACs / 模型大小</td><td style="text-align:left" class="muted">⏸ 待模型</td></tr>
+          <tr><td>实时性</td><td style="text-align:left">RTF / p50·p95·p99 延迟</td><td style="text-align:left" class="muted">✅ 已实现</td></tr>
+        </tbody>
+      </table></div>
+    </div>`;
+} else {
+  el("content").innerHTML = keys.map((k) =>
+    `<div class="panel"><h2>${k}</h2>
+     <pre style="overflow-x:auto;font-size:12px;color:var(--fg-dim)">${
+       JSON.stringify(d.results[k], null, 2).replace(/</g, "&lt;")
+     }</pre></div>`
+  ).join("");
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# 体积管控：C: 盘只剩 18 GB，这些目录一律不入库（见 docs/ISSUES.md I-04）
+data/
+models/
+checkpoints/
+cache/
+
+# 评测产物：json 指标入库（是作品集的一部分），音频与大图不入库
+results/**/*.wav
+results/**/*.flac
+results/**/*.npz
+!results/**/*.json
+!results/**/*.md
+
+# 系统
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# 构建产物：pack_for_colab.py 的输出，随时可重新生成，不该入库造成噪音 diff
+dist/

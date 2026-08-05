@@ -1,0 +1,89 @@
+[project]
+name = "rtse"
+version = "0.1.0"
+description = "Real-time far-field speech enhancement and ASR robustness system"
+readme = "README.md"
+# 3.11 是当前音频/ML 生态在 Windows 上 wheel 覆盖最完整的版本。
+# 不用 3.12+/3.14：pesq、ctranslate2、onnxruntime 等存在缺 wheel 的风险，
+# 而本机没有 MSVC Build Tools，一旦回落到源码编译就会失败。见 docs/ISSUES.md I-02。
+requires-python = ">=3.11,<3.12"
+
+dependencies = [
+    # --- 数值与信号 ---
+    "numpy>=1.26,<3",
+    "scipy>=1.11",
+    "soundfile>=0.12",       # 自带 libsndfile 二进制，Windows 无需额外安装
+    "soxr>=0.5",             # 高质量重采样；比 librosa 轻，且不拖 numba
+    # --- 深度学习 ---
+    "torch>=2.4",            # 本地锁定 CPU 版（见下方 index 配置），省 ~2.5 GB 磁盘
+    "onnxruntime>=1.18",     # 流式推理运行时
+    "onnx>=1.16",            # torch.onnx.export 的必需依赖（不是 onnxruntime 的传递依赖）
+    # --- 指标 ---
+    "pystoi>=0.4",
+    "jiwer>=3.0",            # WER/CER 编辑距离
+    # --- VAD ---
+    "webrtcvad-wheels>=2.0.14",   # 官方 webrtcvad 无 Windows wheel，用带预编译的 fork
+    # --- ASR ---
+    "faster-whisper>=1.0",
+    # --- Web 服务 ---
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "python-multipart>=0.0.9",
+    # --- 工具 ---
+    "pyyaml>=6.0",
+    "tqdm>=4.66",
+    "rich>=13.7",
+    "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+# PESQ 只发源码分发，Windows 上必须用 MSVC 现编（本机没有，见 docs/ISSUES.md I-05）。
+# 用平台标记隔离：Windows 上静默跳过，Colab(Linux) 上正常安装。
+# 因此 PESQ 是 Colab 侧指标，本地评测报告中该列标注为 n/a。
+quality = ["pesq>=0.0.4; sys_platform != 'win32'"]
+# 本机直采麦克风。默认方案由浏览器 WebAudio 采集，服务端不碰硬件，故为可选。
+mic = ["sounddevice>=0.4.6"]
+dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6"]
+
+[project.scripts]
+rtse-doctor  = "rtse.cli.doctor:main"
+rtse-enhance = "rtse.cli.enhance:main"
+rtse-eval    = "rtse.cli.evaluate:main"
+rtse-asr     = "rtse.cli.asr:main"
+rtse-server  = "rtse.cli.serve:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rtse"]
+
+# 强制 torch 走 CPU-only 索引。默认索引在 Windows 上也可能拉到 CUDA 变体，
+# 而 C: 盘只剩 18 GB（见 docs/ISSUES.md I-04），必须省下这 2.5 GB。
+# 本地只做推理与模型结构调试，训练在 Colab（那边有自己的 GPU torch）。
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = [
+    # ONNX 流式导出时 torch 会警告"张量被当成常量追踪"和"GRU 的 batch_size"。
+    # 这两条在本项目里都是**预期且安全**的：流式图的形状完全固定
+    # （batch=1、1 帧、257 频点），常量折叠正是我们想要的，
+    # 而 GRU 的初始隐状态已经显式作为图的输入外置了 —— 正是警告建议的做法。
+    # 真正的判据是 tests/test_onnx_export.py 里的数值一致性，不是有没有警告。
+    "ignore::torch.jit.TracerWarning",
+    "ignore:Exporting a model to ONNX with a batch_size other than 1:UserWarning",
+    "ignore:The feature will be removed:DeprecationWarning",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

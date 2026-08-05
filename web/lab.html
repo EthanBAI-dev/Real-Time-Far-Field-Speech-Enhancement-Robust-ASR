@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RTSE · 文件实验台</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+
+<header>
+  <h1>RTSE <small>文件实验台</small></h1>
+  <nav>
+    <a href="/">实时演示</a>
+    <a href="/lab" class="on">文件实验台</a>
+    <a href="/bench">基准看板</a>
+  </nav>
+</header>
+
+<main>
+
+  <div class="note">
+    上传一段<b>干净</b>语音，这里会按指定的混响与噪声条件合成带噪信号，
+    再用多种方法处理并给出完整指标对比。
+    因为有干净参考，这里能算出实时演示里算不了的 SI-SDR / STOI / ESTOI。
+  </div>
+
+  <div class="panel">
+    <div class="controls">
+      <div class="ctl">
+        <label>音频文件</label>
+        <input type="file" id="file" accept="audio/*"
+               style="background:var(--panel-2);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:13px;max-width:280px">
+      </div>
+      <div class="ctl">
+        <label>噪声类型</label>
+        <select id="noise">
+          <option value="babble" selected>babble · 多人说话</option>
+          <option value="cafeteria">cafeteria · 餐厅</option>
+          <option value="white">white · 白噪声</option>
+          <option value="pink">pink · 粉红噪声</option>
+          <option value="car">car · 车内</option>
+          <option value="keyboard">keyboard · 键盘（冲激）</option>
+          <option value="hum">hum · 工频嗡声</option>
+        </select>
+      </div>
+      <div class="ctl">
+        <label>SNR</label>
+        <select id="snr">
+          <option value="-5">-5 dB</option>
+          <option value="0">0 dB</option>
+          <option value="5" selected>5 dB</option>
+          <option value="10">10 dB</option>
+          <option value="15">15 dB</option>
+          <option value="20">20 dB</option>
+        </select>
+      </div>
+      <div class="ctl">
+        <label>混响 T60</label>
+        <select id="t60">
+          <option value="0" selected>0 · 无混响</option>
+          <option value="0.3">0.3 s</option>
+          <option value="0.6">0.6 s</option>
+          <option value="0.9">0.9 s</option>
+        </select>
+      </div>
+      <div class="ctl">
+        <label>&nbsp;</label>
+        <button id="run" class="primary">运行对比</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="status" class="note" hidden></div>
+
+  <div class="panel" id="resultPanel" hidden>
+    <h2>指标对比</h2>
+    <div class="tablewrap">
+      <table id="tbl">
+        <thead><tr>
+          <th>方法</th><th>SI-SDR</th><th>ΔSI-SDR</th><th>SegSNR</th>
+          <th>STOI</th><th>ΔSTOI</th><th>ESTOI</th><th>PESQ</th>
+          <th>RTF</th><th>p99 ms</th><th>试听</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="note" style="margin-top:14px;border-left-color:var(--line)" id="readNote"></div>
+  </div>
+
+  <div class="panel" id="specPanel" hidden>
+    <h2>频谱对比</h2>
+    <div id="specs"></div>
+  </div>
+
+</main>
+
+<script type="module" src="/static/lab.js"></script>
+</body>
+</html>

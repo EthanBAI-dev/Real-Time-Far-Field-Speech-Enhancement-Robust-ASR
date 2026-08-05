@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RTSE · 实时语音增强演示</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+
+<header>
+  <h1>RTSE <small>实时远场语音增强与 ASR 鲁棒性</small></h1>
+  <nav>
+    <a href="/" class="on">实时演示</a>
+    <a href="/lab">文件实验台</a>
+    <a href="/bench">基准看板</a>
+  </nav>
+</header>
+
+<main>
+
+  <div id="banner" class="note">
+    正在检测音频输入设备…
+  </div>
+
+  <div class="panel">
+    <div class="controls">
+      <div class="ctl">
+        <label>音频来源</label>
+        <select id="selSource">
+          <option value="mic">麦克风</option>
+          <option value="virtual">虚拟麦克风 · 文件按实时节奏回放</option>
+        </select>
+      </div>
+      <div class="ctl" id="ctlVirtual" hidden>
+        <label>虚拟输入条件</label>
+        <div style="display:flex;gap:8px">
+          <select id="selVnoise" style="width:130px">
+            <option value="babble" selected>babble</option>
+            <option value="cafeteria">cafeteria</option>
+            <option value="keyboard">keyboard</option>
+            <option value="white">white</option>
+            <option value="car">car</option>
+            <option value="hum">hum</option>
+            <option value="none">无噪声</option>
+          </select>
+          <select id="selVsnr" style="width:88px">
+            <option value="-5">-5 dB</option>
+            <option value="0">0 dB</option>
+            <option value="5" selected>5 dB</option>
+            <option value="10">10 dB</option>
+            <option value="15">15 dB</option>
+          </select>
+          <select id="selVt60" style="width:104px">
+            <option value="0" selected>无混响</option>
+            <option value="0.3">T60 0.3s</option>
+            <option value="0.6">T60 0.6s</option>
+            <option value="0.9">T60 0.9s</option>
+          </select>
+        </div>
+      </div>
+      <div class="ctl">
+        <label>&nbsp;</label>
+        <div style="display:flex;gap:8px">
+          <button id="btnStart" class="primary">开始</button>
+          <button id="btnStop" class="danger" disabled>停止</button>
+        </div>
+      </div>
+      <div class="ctl">
+        <label>降噪方法</label>
+        <select id="selMethod">
+          <option value="none">none · 直通（对照）</option>
+          <option value="specsub">specsub · 谱减法</option>
+          <option value="wiener" selected>wiener · 维纳滤波</option>
+          <option value="mmse-lsa">mmse-lsa · MMSE 对数谱</option>
+        </select>
+      </div>
+      <div class="ctl">
+        <label>VAD</label>
+        <select id="selVad">
+          <option value="none">none</option>
+          <option value="energy" selected>energy · 自研</option>
+          <option value="webrtc">webrtc</option>
+        </select>
+      </div>
+      <div class="ctl">
+        <label>选项</label>
+        <div style="display:flex;gap:16px;padding-bottom:5px">
+          <label class="switch"><input type="checkbox" id="chkGate"> VAD 门控</label>
+          <label class="switch"><input type="checkbox" id="chkMonitor"> 监听增强音</label>
+        </div>
+      </div>
+    </div>
+    <div class="note warn" style="margin:14px 0 0" id="monitorHint" hidden>
+      <b>监听已开启</b> —— 用<b>真麦克风</b>时请戴耳机。外放会形成
+      "麦克风→扬声器→麦克风"的声学回路，啸叫的同时也会污染所有指标。
+      （消除这个回路正是 AEC 模块要解决的问题，见 Phase 8。）
+      虚拟麦克风没有这个回路，可以放心外放。
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>实时指标</h2>
+    <div class="stats">
+      <div class="stat" id="stRtf"><div class="k">RTF</div><div class="v">—</div></div>
+      <div class="stat" id="stP95"><div class="k">处理延迟 p95</div><div class="v">—<span class="u">ms</span></div></div>
+      <div class="stat" id="stP99"><div class="k">处理延迟 p99</div><div class="v">—<span class="u">ms</span></div></div>
+      <div class="stat" id="stBudget"><div class="k">帧预算</div><div class="v">—<span class="u">ms</span></div></div>
+      <div class="stat" id="stAlgo"><div class="k">算法延迟</div><div class="v">—<span class="u">ms</span></div></div>
+      <div class="stat" id="stIn"><div class="k">输入电平</div><div class="v">—<span class="u">dB</span></div></div>
+      <div class="stat" id="stOut"><div class="k">输出电平</div><div class="v">—<span class="u">dB</span></div></div>
+      <div class="stat" id="stNr"><div class="k">净衰减</div><div class="v">—<span class="u">dB</span></div></div>
+    </div>
+    <div class="note" style="margin:14px 0 0;border-left-color:var(--line)">
+      <b>怎么读这些数</b><br>
+      · <b>RTF</b> = 处理耗时 ÷ 音频时长。但判断"能不能实时"要看
+      <b>p99 是否守住帧预算（16 ms）</b>，不是看 RTF 均值 ——
+      均值只有 1 ms 但 p99 冲到 20 ms 的系统，听感上是每隔几秒爆一次音。<br>
+      · <b>算法延迟 32 ms</b> 由 STFT 窗长决定，CPU 再快也消不掉。<br>
+      · <b>净衰减</b>是输入输出电平差，已做约 1.6 s 的时间平滑（瞬时值会随
+      当前是语音段还是静音段剧烈摆动，没有参考价值）。
+      注意它<b>只说明动了多少，不说明动得对不对</b> ——
+      无差别地把所有声音压低 10 dB 也能得到 10 dB 的净衰减。
+      有参考的质量指标（SI-SDR / STOI）请到<a href="/lab">文件实验台</a>看。<br>
+      · <b>刚切换方法后读数会偏低，属正常</b>：噪声估计器（MCRA）被重置了，
+      需要约 2 秒重新建立最小值跟踪窗口。等几秒再读。
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>频谱对比</h2>
+    <div class="specwrap">
+      <span class="tag">带噪输入</span>
+      <canvas id="cvNoisy" style="height:190px"></canvas>
+    </div>
+    <div class="specwrap">
+      <span class="tag">增强输出</span>
+      <canvas id="cvEnh" style="height:190px"></canvas>
+    </div>
+    <div class="specwrap">
+      <span class="tag">VAD</span>
+      <canvas id="cvVad" style="height:44px"></canvas>
+    </div>
+    <div class="note" style="margin:10px 0 0;border-left-color:var(--line)">
+      频率轴为<b>对数刻度</b>（60 Hz ~ 8 kHz）。线性刻度下 0~1 kHz 这段
+      —— 承载基频与第一共振峰、信息量最大的区间 —— 只占 64 条里的 4 条，
+      肉眼看不出降噪对语音谐波做了什么。
+      VAD 条：柱高是概率，绿色是硬判决，蓝色底边是最终输出。
+      三者不一致的地方，正是迟滞与挂起在起作用。
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>实时字幕 <span class="muted" style="text-transform:none;font-weight:400">· ASR</span></h2>
+    <div id="subs" class="muted">
+      ASR 尚未接入 —— 需要先下载 Whisper 模型。见 docs/PROGRESS.md 的 Phase 5。
+      VAD 已经在按语音段切分，切分点就是字幕的出字时机。
+    </div>
+  </div>
+
+</main>
+
+<script type="module" src="/static/live.js"></script>
+</body>
+</html>
