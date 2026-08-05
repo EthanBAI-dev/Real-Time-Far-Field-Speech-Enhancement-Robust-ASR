@@ -3,11 +3,9 @@
 **Real-Time Far-Field Speech Enhancement for Robust ASR**
 远场语音增强与 ASR 鲁棒性系统
 
-[![tests](https://github.com/YOUR_USERNAME/rtse/actions/workflows/tests.yml/badge.svg)](https://github.com/YOUR_USERNAME/rtse/actions/workflows/tests.yml)
+[![tests](https://github.com/EthanBAI-dev/Real-Time-Far-Field-Speech-Enhancement-Robust-ASR/actions/workflows/tests.yml/badge.svg)](https://github.com/EthanBAI-dev/Real-Time-Far-Field-Speech-Enhancement-Robust-ASR/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](pyproject.toml)
-
-<!-- TODO: 仓库建到 GitHub 后，把上面两处 YOUR_USERNAME 换成真实用户名 -->
 
 ```
 麦克风 → VAD → 去混响 → 降噪(DSP 基线 vs 神经网络) → [波束形成] → ASR → 实时字幕
