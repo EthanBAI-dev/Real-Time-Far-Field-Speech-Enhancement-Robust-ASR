@@ -1,8 +1,15 @@
 """全量校验测试集的参考音频有没有被截断（docs/ISSUES.md I-21）。
 
-01_data_prep.ipynb 里加的校验只抽查 120 条，够用来在生成过程中快速发现系统性问题，
-但不是对下载回本地的那份数据的独立复核。这个脚本对**全部**样本跑同一个 VAD
-尾部检测，用来在正式拿一份新 testset.zip 去算 CER 之前做一次没有偷懒的确认。
+01_data_prep.ipynb 里的生成脚本已经在**混响之前的干信号**上做过全量校验，
+这个脚本是拿到本地之后的独立复核。
+
+**已知局限**：本地只有打包好的 `testset.zip`，里面 `clean` 字段是**混响后**的
+参考音频，没有单独保存混响前的干信号。混响卷积会让语音末尾在 T60 量级上
+真实地衰减拖尾——这是物理上合理的现象，不是内容被截断，但会让基于混响后
+信号的 VAD 尾部检测产生假警报（首次在 Colab 上验证过：T60=0.3 的主表批量
+误报，见 I-21）。所以这个脚本按 `t60` 分组报告：**T60=0 的样本**（clean 就是
+干信号，没有这个问题）是可信的截断信号；**T60>0 的样本**的"疑似截断"计数
+只作参考，不能直接当作数据有问题的证据。
 
 用法::
 
@@ -44,30 +51,49 @@ def main() -> int:
     tail_frames = int(round(args.tail_sec * sr / HOP_LENGTH))
 
     vad = build_vad("energy")
-    flagged = []
+    flagged_t60_0, flagged_t60_pos = [], []
     for i, r in enumerate(records):
         clean = read_audio(root / r["clean"])
         flags = vad.process_signal(clean)
         tail = flags[-tail_frames:] if tail_frames else flags[-1:]
         if tail.size and tail.mean() > 0.5:
-            flagged.append(r["id"])
+            (flagged_t60_0 if r.get("t60", 0) == 0 else flagged_t60_pos).append(r["id"])
         if (i + 1) % 100 == 0 or i + 1 == len(records):
             console.print(f"  {i + 1}/{len(records)}", end="\r")
     console.print()
 
     n = len(records)
-    console.print(f"全量校验 {n} 条，疑似截断 {len(flagged)} 条 ({len(flagged) / n:.1%})")
-    if flagged:
-        console.print(f"前 10 条 id： {flagged[:10]}")
+    n_t60_0 = sum(1 for r in records if r.get("t60", 0) == 0)
+    n_t60_pos = n - n_t60_0
+    console.print(f"全量校验 {n} 条（T60=0 有 {n_t60_0} 条，T60>0 有 {n_t60_pos} 条）")
+    console.print(
+        f"[bold]T60=0（可信）[/bold]：疑似截断 {len(flagged_t60_0)} 条"
+        + (f" / {n_t60_0} ({len(flagged_t60_0) / n_t60_0:.1%})" if n_t60_0 else "（无此类样本）")
+    )
+    if flagged_t60_0:
+        console.print(f"  前 10 条 id： {flagged_t60_0[:10]}")
+    console.print(
+        f"[dim]T60>0（仅供参考，混响拖尾会造成假警报，不能直接当证据）[/dim]："
+        f"疑似截断 {len(flagged_t60_pos)}"
+        + (f" / {n_t60_pos} ({len(flagged_t60_pos) / n_t60_pos:.1%})" if n_t60_pos else "")
+    )
 
     if args.out:
         Path(args.out).write_text(
-            json.dumps({"total": n, "flagged": flagged}, ensure_ascii=False, indent=1),
+            json.dumps(
+                {
+                    "total": n,
+                    "flagged_t60_0_reliable": flagged_t60_0,
+                    "flagged_t60_positive_reverb_tail_caveat": flagged_t60_pos,
+                },
+                ensure_ascii=False,
+                indent=1,
+            ),
             encoding="utf-8",
         )
         console.print(f"明细已写入 {args.out}")
 
-    return 1 if flagged else 0
+    return 1 if flagged_t60_0 else 0
 
 
 if __name__ == "__main__":
