@@ -21,6 +21,7 @@ dependencies = [
     # --- 指标 ---
     "pystoi>=0.4",
     "jiwer>=3.0",            # WER/CER 编辑距离
+    "opencc-python-reimplemented>=0.1.7",  # 繁体->简体（纯 Python，Windows 不用编译）
     # --- VAD ---
     "webrtcvad-wheels>=2.0.14",   # 官方 webrtcvad 无 Windows wheel，用带预编译的 fork
     # --- ASR ---

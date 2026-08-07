@@ -245,4 +245,29 @@
     模块缺失的代价）两条新发现，均用真实 780 样本数据支撑
 - **测试增至 111 项（110 passed + 1 xfailed），全部符合预期**
 
+### 2026-08-07（续）— ASR 模块
+
+- **落地 ASR 模块**（`src/rtse/asr/`）：faster-whisper 推理封装
+  （`whisper_engine.py`，惰性加载 + 采样率前置校验）、中文文本归一化
+  （`normalize.py`：繁简转换、全角半角、中文数字→阿拉伯数字、标点/空白处理）、
+  CER/WER 打分（`scoring.py`，基于 jiwer）。**确认只做预训练推理，不训练**——
+  与用户澄清后的明确结论（faster-whisper 是推理框架不是训练框架）
+- 新增 CLI 入口 `rtse-asr`（[`asr.py`](../src/rtse/cli/asr.py)），补上此前
+  `pyproject.toml` 里声明了入口点但文件不存在的缺口：`transcribe` 转写单文件，
+  `eval` 对测试集批量算 clean/noisy/（可选）enhanced 三组 CER 对比
+- 新增 46 项测试（`test_asr_normalize.py` 32 项、`test_asr_scoring.py` 7 项、
+  `test_asr_whisper.py` 单元测试 2 项 + 网络门控集成测试 2 项），全部通过；
+  全量测试套件跑到 157 项（未计入网络门控的 2 项），无回归
+- 用真实 THCHS-30 样本手工跑通端到端转写，过程中连续揪出两个 bug：
+  - jiwer.wer 对中文完全失效（无空格，整句被当一个"词"）——已在代码和测试里
+    明确记录为已知限制，中文一律用 CER
+  - Whisper 偶发吐出繁体字（内容识别对了，只是脚本变体不同）——加 OpenCC
+    T2S 转换后同一样本 CER 从 0.844 降到 0.656
+- **发现新 bug，比预期严重**（[`ISSUES.md`](ISSUES.md) I-21）：本地测试集
+  780 条样本的参考文本全部来自原始未截断转写，但音频被固定截到 `SEG_SEC=6.0`
+  秒——20/20 抽查样本经 VAD 验证在截断点仍有真实语音活动，即参考文本比音频
+  实际内容长，**当前测试集不能用来算可信的 CER**。已在 `01_data_prep.ipynb`
+  里修复（改用自然时长 [3s, 18s] + 生成后 VAD 校验断言零截断样本），但需要
+  你重新在 Colab 跑一遍并重新下载 `testset.zip`，本地才能计算真实 CER 数字
+
 <!-- 后续条目在此追加 -->
