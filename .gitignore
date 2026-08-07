@@ -31,3 +31,7 @@ dist/
 # Colab 回传的原始压缩包：内容已经解压分流到 models/ 和 results/，
 # 压缩包本身没必要入库
 colab_outputs.zip
+
+# Colab 回传的数据包（几百 MB，解压后进 data/ 与 models/，包本身不入库）
+testset.zip
+output-*.zip
