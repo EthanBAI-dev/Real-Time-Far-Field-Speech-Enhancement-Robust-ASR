@@ -1,7 +1,13 @@
-# Colab 侧操作手册
+# Colab 侧操作手册（v1 · THCHS-30 + MUSAN + RIRS_NOISES）
 
 > 你要在 Colab 上做的事：**下载数据、合成数据集、训练模型、导出 ONNX、算 PESQ**。
 > 其余（推理运行时、指标评测、RTF/延迟测量、ASR 对比、Web 演示）全部在本地，已经做完并验证。
+
+> 本文档对应 [`notebooks/v1_thchs30_musan/`](../notebooks/v1_thchs30_musan/)。
+> 还有一版把噪声/RIR 换成 DNS Challenge 真实录制数据的
+> [`notebooks/v2_dns_real_noise/`](../notebooks/v2_dns_real_noise/README.md)，
+> 操作机制（DATA_MODE / QUICK_TEST / 断线续训等）跟这里完全一样，
+> 差异只在数据源，见那边的 README。
 
 ---
 
@@ -31,7 +37,7 @@ DRIVE_ROOT = '/content/drive/MyDrive/Audio AI/RTSE'
 
 ### ③ 上传 notebook
 
-把 `notebooks/` 下三个 `.ipynb` 传到 Drive（或直接在 Colab 里用「上传笔记本」打开）。
+把 `notebooks/v1_thchs30_musan/` 下三个 `.ipynb` 传到 Drive（或直接在 Colab 里用「上传笔记本」打开）。
 
 ### ④ Colab 运行时设置
 
@@ -271,8 +277,9 @@ uv run rtse-doctor
 
 本地 C: 盘只剩约 16 GB（见 [`ENVIRONMENT.md`](ENVIRONMENT.md)），所以：
 
-- **测试集控制在 2 GB 以内**（notebook 01 里 `PER_CELL=20`、`SEG_SEC=6.0` 就是按这个定的，
-  会打印预估体积，跑之前看一眼）
+- **测试集控制在 2 GB 以内**（notebook 01 里 `PER_CELL=20`、`MIN_SEG_SEC=3.0`/`MAX_SEG_SEC=18.0`
+  就是按这个定的，会打印预估体积，跑之前看一眼；音频按每条语音的自然时长保留，
+  不是固定截断秒数——固定截断曾经导致参考文本比音频长，见 [`ISSUES.md`](ISSUES.md) I-21）
 - **不要**把 THCHS-30 / MUSAN / RIRS 原始数据下载到本地，它们只在 Colab 上用
 - 模型很小（crn-lite 的 ONNX 约 2.2 MB），随便传
 

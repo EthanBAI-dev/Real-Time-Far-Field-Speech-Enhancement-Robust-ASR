@@ -249,6 +249,11 @@ VAD/
 - **验收**：`uv run rtse-enhance --method wiener in.wav out.wav` 出声且 SI-SDR 提升为正
 
 ### Phase 3 — 数据配方 ☁️Colab
+> 实际交付分成两版，都不删、并排保留做对比，见
+> [`notebooks/v1_thchs30_musan/README.md`](../notebooks/v1_thchs30_musan/README.md) 和
+> [`notebooks/v2_dns_real_noise/README.md`](../notebooks/v2_dns_real_noise/README.md)。
+> v1 用 THCHS-30 + MUSAN + RIRS_NOISES（已训练交付）；v2 把噪声/RIR 换成本节最初设想的
+> DNS Challenge 真实录制数据（干净语音仍是 THCHS-30，DNS 没有中文语料）。
 - [ ] `notebooks/01_data_prep.ipynb`
 - [ ] 下载：DNS5 干净语音子集 + 噪声子集、openSLR RIR、MUSAN 噪声、AISHELL-1 test
 - [ ] 合成训练/验证/测试集（严格按 SNR、噪声、T60 分层）
