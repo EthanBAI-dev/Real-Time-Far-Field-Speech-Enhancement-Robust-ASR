@@ -175,6 +175,37 @@ def test_mcra_does_not_need_clean_leading_noise(speech):
     assert abs(ratio_db) < 6.0, f"噪声估计偏离真值 {ratio_db:.1f} dB"
 
 
+@pytest.mark.xfail(reason="I-20：MCRA 在高 SNR 下把语音功率误吸收成噪声，未修复", strict=True)
+def test_mcra_high_snr_known_bug(speech):
+    """已知未解决的 bug（docs/ISSUES.md I-20）。
+
+    用真实 Colab 评测数据发现：SNR>=15 dB 时 wiener 处理后的 SI-SDR
+    **集体劣于不处理**，且 20/20 样本一致、跨噪声类型一致，不是离群点。
+    追踪到 MCRA 内部：SNR=20 时真实噪声功率 5.8e-4，估计出来是 24.97，
+    差了约 4.3 万倍——语音帧的 ratio 长时间够不到 delta=5.0 的判决门槛，
+    被持续误判成噪声、缓慢吸收进噪声估计。
+
+    这条测试**故意**标记 `xfail(strict=True)`：现在必须是红的，
+    这样它才能诚实地反映"这个问题还没修"。修好 MCRA 后这条会意外变绿，
+    `strict=True` 下 xfail 却 pass 本身会被判为失败，逼着去把标记摘掉——
+    比"改完感觉应该好了"更可靠的确认方式。
+
+    不要因为这条测试失败就去调整 delta/alpha_s/L 草草糊过去：
+    这几个参数相互耦合，随手改一个大概率只是把问题挪到别的 SNR/噪声条件下，
+    需要系统性重新验证才能真正解决（原因见 ISSUES.md I-20）。
+
+    用**独立的本地 RNG**，不用模块级共享的 `RNG`——本文件里所有测试共用
+    同一个 `RNG` 对象，谁多消耗几次抽取，后面的测试拿到的随机序列就会跟着变，
+    新增测试插在中间会让排在它后面的测试意外失败。这条踩过一次了。
+    """
+    local_rng = np.random.default_rng(20260820)
+    noise = make_noise("white", speech.size, local_rng)
+    noisy, _ = mix_at_snr(speech, noise, 20.0, rng=local_rng)
+    enh = build_dsp("wiener").process(noisy)
+    gain = si_sdr(speech, enh) - si_sdr(speech, noisy)
+    assert gain > 0, f"SNR=20 dB 下 wiener 处理后 SI-SDR 反而下降了 {-gain:.2f} dB"
+
+
 # ----------------------------------------------------------------- 增强器
 
 

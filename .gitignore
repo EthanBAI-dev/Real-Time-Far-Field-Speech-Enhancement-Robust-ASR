@@ -27,3 +27,7 @@ desktop.ini
 
 # 构建产物：pack_for_colab.py 的输出，随时可重新生成，不该入库造成噪音 diff
 dist/
+
+# Colab 回传的原始压缩包：内容已经解压分流到 models/ 和 results/，
+# 压缩包本身没必要入库
+colab_outputs.zip
