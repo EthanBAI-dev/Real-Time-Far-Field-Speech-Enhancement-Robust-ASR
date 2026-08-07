@@ -8,10 +8,32 @@ __pycache__/
 .ipynb_checkpoints/
 
 # 体积管控：C: 盘只剩 18 GB，这些目录一律不入库（见 docs/ISSUES.md I-04）
-data/
-models/
-checkpoints/
-cache/
+#
+# ⚠️ **所有路径必须带前导斜杠**，锚定到仓库根目录。
+# 不带斜杠的 `data/` / `models/` 会匹配**任意层级**的同名目录 ——
+# 曾经因此把 `src/rtse/data/`（synth.py、dataset.py）和
+# `src/rtse/models/`（crn.py，整个神经网络定义）一起静默排除掉，
+# 仓库里少了 5 个核心源码文件、clone 下来连 import 都过不去，
+# 而本地测试和 Colab 打包都不经过 git，所以一直没暴露（见 ISSUES.md I-23）。
+/data/
+/checkpoints/
+/cache/
+
+# 用 `/models/*` 而不是 `/models/`：目录形式会让 git 直接不下探，
+# 下面那些 `!` 例外就永远不生效。
+/models/*
+# 例外：训练好的 ONNX 模型入库（三档合计约 9.5 MB，远低于 GitHub 的单文件
+# 100 MB 上限），这样换一台机器 clone 下来就能直接跑推理和 Web 演示，
+# 不必等 Colab 重训。checkpoint（.pt，含优化器状态，几十 MB）仍然不入库——
+# 那是训练中间态，续训从 Drive 取。
+!models/crn-*.onnx
+!models/export_info.json
+# 未训练的随机权重模型（仅供集成测试）也带上，2.7 MB，
+# 保证换机器后 tests/ 里依赖它们的用例不会因为缺文件而失败。
+!models/_untrained/
+# ⚠️ models/dnsmos/ 刻意**不**入库：那是微软 DNS-Challenge 仓库的模型文件，
+# 转发分发第三方权重不合适。它只有 1.2 MB 且一行 wget 就能拿到，
+# 换机器时按 docs/SETUP_NEW_MACHINE.md 的说明下载即可。
 
 # 评测产物：json 指标入库（是作品集的一部分），音频与大图不入库
 results/**/*.wav
