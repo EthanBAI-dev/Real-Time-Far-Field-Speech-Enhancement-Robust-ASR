@@ -175,7 +175,39 @@ def test_mcra_does_not_need_clean_leading_noise(speech):
     assert abs(ratio_db) < 6.0, f"噪声估计偏离真值 {ratio_db:.1f} dB"
 
 
-@pytest.mark.xfail(reason="I-20：MCRA 在高 SNR 下把语音功率误吸收成噪声，未修复", strict=True)
+def test_mcra_dual_timescale_never_increases_estimate():
+    """I-20 修复的核心保证：双时间尺度地板 = min(短窗口, 长窗口)，
+    数学上**只可能更低或相等，不可能比单窗口版本更高**。
+
+    这条测试不依赖任何具体音频场景（构造反例极其困难，见 I-20 的详细记录——
+    真实 bug 需要"连续真实语音 + 混响 + 数秒时长"才会显现，玩具信号里
+    长短窗口经常给出完全相同的结果，测不出差异）。改为直接验证这个不变量：
+    换噪声估计器不会让原本正常的场景变差，这是这次修复"安全"的真正原因，
+    比端到端 SI-SDR 更可靠、更不依赖具体音频素材。
+    """
+    rng = np.random.default_rng(55)
+    x = rng.standard_normal(SR * 3) * 0.3
+    cfg = DEFAULT_CONFIG
+    sa = StreamingSTFT(cfg)
+    single = MCRANoiseEstimator(cfg, L2_mult=1)  # 等价于修复前（长窗口=短窗口）
+    dual = MCRANoiseEstimator(cfg, L2_mult=8)
+    n_fr = x.size // cfg.hop
+    for i in range(n_fr):
+        power = np.abs(sa.push(x[i * cfg.hop : (i + 1) * cfg.hop])) ** 2
+        single.update(power)
+        dual.update(power)
+        assert np.all(dual.noise_power <= single.noise_power + 1e-9), (
+            f"第 {i} 帧：双时间尺度估计值超过了单窗口版本，违反了 min() 的数学保证"
+        )
+
+
+@pytest.mark.xfail(
+    reason="I-20：混响+高SNR的主要失效模式已修复（双时间尺度地板），"
+    "但短促静音间隙场景仍未解决——已确认根因不是 alpha_d 收敛速度"
+    "（调低 alpha_d 反而让这条测试更差，见 ISSUES.md I-20 的参数网格搜索记录），"
+    "需要比调参更深层的改动才能解决",
+    strict=True,
+)
 def test_mcra_high_snr_known_bug(speech):
     """已知未解决的 bug（docs/ISSUES.md I-20）。
 

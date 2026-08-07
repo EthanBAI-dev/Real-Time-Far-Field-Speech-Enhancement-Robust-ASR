@@ -19,14 +19,47 @@ from rtse.audio.stft import DEFAULT_CONFIG, STFTConfig
 __all__ = ["MCRANoiseEstimator"]
 
 
+class _MinTracker:
+    """滑动窗最小值跟踪，双缓冲实现 O(1) 更新。
+
+    每 ``L`` 帧把累积的候选最小值交换进当前估计并重置。这样任意时刻的估计
+    反映的都是最近 ``L`` ~ ``2L`` 帧内的最小值，不需要保存整个窗的历史。
+
+    单独抽成一个类是因为 :class:`MCRANoiseEstimator` 需要**两个不同时间尺度**
+    的实例（见 I-20 的修复说明），复制粘贴同一段双缓冲逻辑两遍很容易在后续
+    修改时只改一处、让两份实现悄悄跑偏。
+    """
+
+    def __init__(self, n_freq: int, L: int) -> None:
+        self.L = L
+        self._min = np.zeros(n_freq)
+        self._tmp = np.zeros(n_freq)
+        self._idx = 0
+
+    def reset(self, init: np.ndarray) -> None:
+        self._min = init.copy()
+        self._tmp = init.copy()
+        self._idx = 0
+
+    def update(self, s: np.ndarray) -> np.ndarray:
+        if self._idx > 0 and self._idx % self.L == 0:
+            self._min = np.minimum(self._tmp, s)
+            self._tmp = s.copy()
+        else:
+            self._min = np.minimum(self._min, s)
+            self._tmp = np.minimum(self._tmp, s)
+        self._idx += 1
+        return self._min
+
+
 class MCRANoiseEstimator:
     """最小值控制的递归平均噪声估计器。
 
     算法流程（每帧）：
 
     1. 频率轴平滑 → 时间轴递归平滑，得到平滑功率谱 ``S``；
-    2. 在长度 ``L`` 帧的滑动窗内跟踪 ``S`` 的最小值 ``S_min``；
-    3. 若 ``S / S_min > delta``，判该频点存在语音；
+    2. 用两个不同时间尺度的滑动窗跟踪 ``S`` 的最小值，取二者中更低的作为地板；
+    3. 若 ``S / floor > delta``，判该频点存在语音；
     4. 语音存在概率 ``p`` 递归平滑后，用它调制噪声更新速率：
        有语音就几乎不更新，没语音就快速跟踪。
 
@@ -34,10 +67,27 @@ class MCRANoiseEstimator:
         alpha_s: 功率谱时间平滑系数。越大越平滑、跟踪越慢。
         alpha_p: 语音存在概率的平滑系数。
         alpha_d: 噪声更新的基础平滑系数。
-        delta: 判定语音存在的 ``S/S_min`` 门限。经典取值 5（约 7 dB）。
-        L: 最小值跟踪窗长（帧）。默认 125 帧 ≈ 2 秒 @16 ms 帧移 ——
-            必须明显长于最长的连续语音段，否则最小值会被语音抬高，
-            导致噪声被高估、语音被过度削弱。
+        delta: 判定语音存在的 ``S/floor`` 门限。经典取值 5（约 7 dB）。
+        L: 短时间尺度最小值跟踪窗长（帧）。默认 125 帧 ≈ 2 秒 @16 ms 帧移，
+            负责快速适应变化的噪声（比如噪声突然变大）。
+        L2_mult: 长时间尺度窗长相对 ``L`` 的倍数，默认 8（≈16 秒）。
+            负责兜底找到真正的噪声地板——见下方"双时间尺度"说明。
+
+    双时间尺度的由来（见 ``docs/ISSUES.md`` I-20）
+    -----------------------------------------------
+    单一 ``L=125`` 帧（2 秒）窗口在**混响 + 真实连续语音**（词间停顿短、
+    又被混响尾巴填上残余能量）的场景下会系统性失败：2 秒内可能根本没有出现过
+    足够安静的时刻，``S_min`` 被"卡"在一个远高于真实噪声地板的值上，
+    且直到下一次 2 秒重置前都无法修正。SNR 越高（真实噪声地板越低），
+    这个偏差在**相对**幅度上越夸张——实测 SNR=20 dB 时噪声功率被高估 22 dB
+    （约 170 倍），导致维纳滤波之类的增益函数把大半语音削掉。
+
+    延长单一窗口的做法（比如直接把 ``L`` 调到 2000 帧）会牺牲对**真实**噪声突变
+    的响应速度。这里保留原有的短窗口不变（负责噪声突变的正常适应），
+    额外并行跑一个长窗口只用来兜底"短窗口一直没找到过低点"这种情况，
+    取两者较小值作为最终地板。代价是长窗口重置前的 ~16 秒内，如果噪声地板
+    真的持续上升，判决会偏保守（更容易把新的噪声误判成语音）——这是刻意的
+    权衡：宁可短暂偏保守，也不要回到"直接按几个数量级高估噪声"的状态。
     """
 
     def __init__(
@@ -48,6 +98,7 @@ class MCRANoiseEstimator:
         alpha_d: float = 0.95,
         delta: float = 5.0,
         L: int = 125,
+        L2_mult: int = 8,
     ) -> None:
         self.cfg = cfg
         self.alpha_s = alpha_s
@@ -55,17 +106,18 @@ class MCRANoiseEstimator:
         self.alpha_d = alpha_d
         self.delta = delta
         self.L = L
+        self.L2_mult = L2_mult
         # 频率轴平滑窗（归一化 Hann，宽度 5）。作用是抑制单个频点的随机起伏，
         # 否则最小值跟踪会被谱谷噪声带偏。
         w = np.hanning(5)
         self._bfreq = w / w.sum()
+        self._short = _MinTracker(cfg.n_freq, L)
+        self._long = _MinTracker(cfg.n_freq, L * L2_mult)
         self.reset()
 
     def reset(self) -> None:
         n = self.cfg.n_freq
         self._S = np.zeros(n)
-        self._S_min = np.zeros(n)
-        self._S_tmp = np.zeros(n)
         self._p = np.zeros(n)
         self._noise = np.zeros(n)
         self._frame_idx = 0
@@ -89,8 +141,8 @@ class MCRANoiseEstimator:
             # 首帧直接用观测值初始化。不假设它是纯噪声 ——
             # 就算首帧全是语音，MCRA 也会在约 L 帧内把估计拉回正确水平。
             self._S = power.copy()
-            self._S_min = power.copy()
-            self._S_tmp = power.copy()
+            self._short.reset(power)
+            self._long.reset(power)
             self._noise = power.copy()
             self._initialized = True
             self._frame_idx = 1
@@ -100,19 +152,13 @@ class MCRANoiseEstimator:
         sf = np.convolve(power, self._bfreq, mode="same")
         self._S = self.alpha_s * self._S + (1.0 - self.alpha_s) * sf
 
-        # 2) 滑动窗最小值跟踪。
-        #    用双缓冲实现 O(1) 更新：S_tmp 累积当前窗内的最小值，
-        #    每 L 帧把它交换进 S_min 并重置。这样 S_min 反映的始终是
-        #    最近 L~2L 帧的最小值，无需保存整个窗的历史。
-        if self._frame_idx % self.L == 0:
-            self._S_min = np.minimum(self._S_tmp, self._S)
-            self._S_tmp = self._S.copy()
-        else:
-            self._S_min = np.minimum(self._S_min, self._S)
-            self._S_tmp = np.minimum(self._S_tmp, self._S)
+        # 2) 双时间尺度最小值跟踪，取更低者
+        s_min_short = self._short.update(self._S)
+        s_min_long = self._long.update(self._S)
+        floor = np.minimum(s_min_short, s_min_long)
 
-        # 3) 语音存在判决：平滑谱显著高于局部最小值 → 有语音
-        ratio = self._S / np.maximum(self._S_min, 1e-12)
+        # 3) 语音存在判决：平滑谱显著高于地板 → 有语音
+        ratio = self._S / np.maximum(floor, 1e-12)
         indicator = (ratio > self.delta).astype(np.float64)
 
         # 4) 概率平滑后调制噪声更新速率
