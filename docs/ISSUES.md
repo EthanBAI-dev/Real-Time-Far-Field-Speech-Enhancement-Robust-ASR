@@ -871,4 +871,55 @@ specsub 5.11dB、wiener 5.23dB、mmse-lsa 5.22dB——已写入
 
 ---
 
+## I-23 · `.gitignore` 少写一个斜杠，把核心源码目录整个排除在仓库之外
+
+- **状态**：✅ 已修复（2026-08-07），已用全新 clone 实测验证
+- **阶段**：Phase 5，准备把项目传到 GitHub、换另一台机器继续工作时发现
+- **现象**：整理 `.gitignore` 让训练好的 ONNX 模型入库时，把 `models/` 改成
+  `models/*`，`git status` 里突然冒出 `?? src/rtse/models/`。查证后确认：
+  **仓库里从来就没有过这 5 个文件**：
+
+  ```
+  src/rtse/data/__init__.py
+  src/rtse/data/dataset.py      ← OnlineMixDataset，训练数据管线
+  src/rtse/data/synth.py        ← make_noise / make_rir / mix_at_snr
+  src/rtse/models/__init__.py
+  src/rtse/models/crn.py        ← CRN 模型定义，整个项目的核心
+  ```
+
+  也就是说 **GitHub 上那份代码 clone 下来连 `import rtse` 都过不去**。
+- **根因**：`.gitignore` 里写的是 `data/` 和 `models/`（无前导斜杠）。
+  git 的规则是：**模式里只有结尾那个斜杠时，它匹配任意层级的同名目录**，
+  不是只匹配仓库根下的那一个。所以本意"别把几百 MB 的数据集和模型权重入库"，
+  实际连 `src/rtse/data/`、`src/rtse/models/` 一起吞掉了。
+- **为什么潜伏这么久没被发现**：**整个工作流里没有任何一步是通过 git 读代码的**。
+  - 本地 `pytest` 跑的是工作区文件，文件都在，全绿；
+  - `scripts/pack_for_colab.py` 用 `pathlib` 遍历文件系统打 zip，
+    不查 git，所以 Colab 每次都拿到完整代码，训练一直正常。
+
+  "本地测试全绿" + "Colab 训练成功"这两个信号，与"仓库根本 clone 不了"
+  **完全兼容**——没有任何一个现有检查会因此变红。
+- **修复**：
+  1. 所有体积管控路径加前导斜杠锚定到仓库根：`/data/`、`/checkpoints/`、`/cache/`。
+  2. `models/` 改成 `/models/*`（目录形式会让 git 不下探，`!` 例外永远不生效），
+     再用 `!models/crn-*.onnx` 等把训练产物放行。
+  3. 在 `.gitignore` 里就地写明这个坑——这种失败模式是隐形的，
+     下次改这个文件的人没有线索会重新踩。
+- **验证方式**：不是看 `git status` 干净就算完，而是**真的 clone 一份到临时目录**，
+  设 `PYTHONPATH` 后执行 `import rtse` / `build_model('crn-nano')` /
+  `make_rir()` + `estimate_t60()`，确认能跑出正确结果。
+  ——这条 bug 的教训就是"本地能跑"不等于"仓库完整"，
+  所以验证必须发生在一份干净的 clone 上。
+- **顺带修掉的**：`pyproject.toml` 里 `rtse-enhance` 同样是"声明了入口点、
+  文件不存在"（跟之前的 `rtse-eval` 一模一样），写 `SETUP_NEW_MACHINE.md` 时
+  要在文档里写这条命令，才发现它跑不了。已补上
+  `src/rtse/cli/enhance.py`，走的是和实时演示完全相同的 `Pipeline` 流式路径。
+- **教训**：**配置文件的"过度生效"比"不生效"危险得多。** 不生效会立刻报错，
+  过度生效则安安静静地做了你没要求它做的事。这条和 I-22 是同一个模式：
+  一个参数/配置被写下来之后，从来没有人回头确认"它实际影响的范围
+  和我以为的范围一致吗"。对 `.gitignore` 这种"排除类"配置尤其要警惕——
+  它的效果是**让东西消失**，而消失的东西不会主动提醒你它不见了。
+
+---
+
 <!-- 后续条目在此追加 -->

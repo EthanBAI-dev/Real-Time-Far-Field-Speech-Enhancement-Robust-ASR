@@ -18,6 +18,10 @@
 
 ## 快速开始
 
+> 换一台新机器从零开始，看 [docs/SETUP_NEW_MACHINE.md](docs/SETUP_NEW_MACHINE.md)
+> ——已实测：clone → 装依赖 → 跑测试 → 出增强音频，全程不需要旧机器上的任何文件。
+> **训练好的三档 ONNX 模型已随仓库分发**（约 9.5 MB），clone 下来就能直接推理。
+
 ```bash
 uv sync
 ```
@@ -76,9 +80,10 @@ uv run rtse-server
 | 文档 | 内容 |
 |---|---|
 | [docs/PLAN.md](docs/PLAN.md) | **总体方案**：架构、选型理由、8 个阶段与验收标准、风险预案 |
+| [docs/SETUP_NEW_MACHINE.md](docs/SETUP_NEW_MACHINE.md) | **换机器接手** —— 从零跑起来需要什么、缺什么、去哪拿 |
 | [docs/COLAB_GUIDE.md](docs/COLAB_GUIDE.md) | **Colab 侧操作手册** —— 你要执行的部分 |
 | [docs/PROGRESS.md](docs/PROGRESS.md) | 完成记录（只记已验证的事实） |
-| [docs/ISSUES.md](docs/ISSUES.md) | 问题记录（15 条，含根因与解法） |
+| [docs/ISSUES.md](docs/ISSUES.md) | 问题记录（23 条，含根因与解法） |
 | [docs/FINDINGS.md](docs/FINDINGS.md) | **实验发现** —— 违反直觉、值得深挖的现象 |
 | [docs/METRICS.md](docs/METRICS.md) | 指标定义、测量方法学、结果表 |
 | [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md) | 本机环境勘察与由此产生的技术决策 |
