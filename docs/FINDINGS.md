@@ -277,9 +277,66 @@ T60≥0.6 这一档大概率能从"全员负分"翻正。
 
 **修复方向**（未做，记录为已知缺口）：给测试集加一组"真实 RIR 分层"，
 跟现有合成 RIR 分层并行——做法跟 v2 给噪声加真实分层完全一样。
-需要先写一个从 RIR 波形估计 T60 的函数（EDC 曲线 −5 到 −35 dB 段线性拟合，
-标准做法），把真实 RIR 按估计出的 T60 分桶，再从对应桶里采样。
 在此之前，所有涉及混响的结论（F-06、METRICS.md 的 T60 扫描表）都应当标注
 "基于合成 RIR"。
+
+### 与业界通行做法的对照（2026-08-07 查证）
+
+查了主流项目和公开数据集之后，结论分两半——**用合成 RIR 是完全正常的，
+但我们这个训练用真实、评测用合成的不对称是真问题**：
+
+**① 混用真实 + 合成 RIR 是标准做法，而且是微软官方的默认值。**
+DNS Challenge 官方合成脚本 `noisyspeech_synthesizer.cfg` 里写得很明确：
+
+```
+rir_choice: 3
+# 1 for only real rir, 2 for only synthetic rir, 3 (default) use both real and synthetic
+lower_t60: 0.3
+upper_t60: 1.3
+rir_table_csv: datasets\acoustic_params\RIR_table_simple.csv
+```
+
+DNS Challenge 数据集本身提供 **3076 条真实 RIR + 约 115000 条合成 RIR**，
+并给每条 RIR 标注 `isReal` 布尔位以及 **T60 / C50 声学参数**，
+明确说明目的是"让研究者能挑子集做受控实验"。所以"合成 RIR 不严谨"这个判断
+是错的——**合成 RIR 是被官方数据集当作一等公民提供的**，
+FullSubNet、DeepFilterNet 这类知名项目训练时也都用仿真 RIR
+（FullSubNet 用的是 MIRD + REVERB Challenge 的 RIR 库，DeepFilterNet 同样用 RIR 做混响增强）。
+
+**② 但"仿真 vs 真实"的分布失配是这个领域公认的、长期存在的问题。**
+多篇论文明确指出：因为真实环境很难采集配对数据，大家普遍用仿真 RIR 合成训练数据，
+而**仿真与真实录音的分布无法完全匹配，神经网络对这个失配很敏感，
+部署到真实场景会出现性能不一致甚至严重失真**。近年专门有工作在研究
+"房间声学仿真的保真度到底多大程度影响真实场景性能"，以及像 Treble10
+这类高质量数据集就是冲着缩小这个 gap 去的。
+
+**③ 所以我们真正的问题不是"用了合成 RIR"，而是训练和评测用了不同来源。**
+标准做法（微软默认）是训练和评测**都**混用真实+合成；我们是训练用真实
+（RIRS_NOISES / DNS IR）、评测 100% 合成——这个方向的失配会让评测数字偏乐观，
+因为模型在训练中见过更难的真实混响，考试时却只考更规整的合成混响。
+这跟"仿真不如真实"是两个独立的问题，我们踩的是前者。
+
+**④ 好消息：修复比原先估计的容易。**
+上面本来写的方案是"自己写 EDC 拟合估 T60 再分桶"，但 DNS Challenge
+已经在 `RIR_table_simple.csv` 里给出了每条 RIR 的 T60 标注（配合
+`lower_t60`/`upper_t60` 做范围筛选正是官方脚本的用法），**不需要自己估**。
+需要确认的是我们下载的 V5 `impulse_responses_000` 分片里是否随包附带这张表
+（该 CSV 不在 GitHub 仓库 master 分支的 48 个文件里，属于随数据分发的部分），
+下载后查一下即可。若确实附带，加真实 RIR 分层就只是"读表 → 按 T60 分桶 → 采样"。
+
+**对本项目叙事的意义**：这条比单纯"我们有个缺口"更有价值——它说明
+**做数据配方审计时，要区分"这个做法本身是否可疑"和"这个做法用得是否自洽"**。
+合成 RIR 本身是业界标准手段，不该因为"是合成的"就否定；真正该被质疑的是
+训练/评测两侧不一致。分不清这两者，就会一边错误地推翻正确的做法，
+一边放过真正的问题。
+
+来源：
+[DNS-Challenge 官方仓库](https://github.com/microsoft/DNS-Challenge)、
+[ICASSP 2021 DNS Challenge](https://arxiv.org/pdf/2009.06122)、
+[INTERSPEECH 2021 DNS Challenge](https://arxiv.org/pdf/2101.01902)、
+[FullSubNet](https://arxiv.org/pdf/2010.15508)、
+[DeepFilterNet](https://ar5iv.labs.arxiv.org/html/2110.05588)、
+[Improving multichannel SE through accurate room-acoustic simulations](https://arxiv.org/html/2606.31552v1)、
+[Treble10 数据集](https://arxiv.org/pdf/2510.23141)
 
 <!-- 后续条目在此追加 -->
