@@ -70,6 +70,8 @@ def main() -> int:
     p.add_argument("--cer-per-cell", type=int, default=2,
                    help="CER 分层抽样：每个实验格取几条，默认 2（39 格 → 78 条）")
     p.add_argument("--asr-model", default="small", help="faster-whisper 规格，默认 small")
+    p.add_argument("--restart", action="store_true",
+                   help="忽略 --out 里已有的缓存，从头跑（默认是续跑）")
     args = p.parse_args()
 
     root = Path(args.testset)
@@ -86,10 +88,36 @@ def main() -> int:
 
     console.print(f"[bold]测试集[/bold] {root}  {len(records)} 条 × {len(methods)} 方法")
 
+    # ── 断点续跑 ──────────────────────────────────────────────────────────
+    # 全量评测要跑近一小时，中途被打断（会话结束、误关终端、断电）是常态。
+    # **每跑完一个方法就落盘**，重跑时跳过已完成的方法——第一次写这个脚本时
+    # 只在最后统一写一次，结果任务在 5/7 处被中断，前面 50 分钟全部白跑。
+    out_path = Path(args.out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    rows: list[dict] = []
+    cer_rows: list[dict] = []
+    if out_path.exists() and not args.restart:
+        cached = json.loads(out_path.read_text(encoding="utf-8"))
+        rows = cached.get("objective", [])
+        cer_rows = cached.get("cer", [])
+        done_obj = {r["method"] for r in rows}
+        done_cer = {r["method"] for r in cer_rows}
+        if done_obj or done_cer:
+            console.print(f"[dim]续跑：已完成客观指标 {sorted(done_obj)}；"
+                          f"已完成 CER {sorted(done_cer)}。加 --restart 可从头重跑。[/dim]")
+
+    def save() -> None:
+        out_path.write_text(
+            json.dumps({"testset": str(root), "objective": rows, "cer": cer_rows},
+                       ensure_ascii=False), encoding="utf-8")
+
     # ── 1. 客观指标（全量）────────────────────────────────────────────────
-    rows = []
     t0 = time.time()
+    done_obj = {r["method"] for r in rows}
     for mi, method in enumerate(methods):
+        if method in done_obj:
+            console.print(f"  [{mi + 1}/{len(methods)}] {method:<10} 已完成，跳过")
+            continue
         # 增强器**每种方法只构造一次**（ONNX 会话初始化很贵，780 条重建一次
         # 就是 780 次加载），但每条样本前必须 reset() —— 增强器内部有状态
         # （噪声估计、GRU 隐状态），不清会让上一条的尾部状态泄漏到下一条开头。
@@ -110,11 +138,13 @@ def main() -> int:
                 el = time.time() - t0
                 console.print(f"  [{mi + 1}/{len(methods)}] {method:<10} "
                               f"{i + 1}/{len(records)}  ({el / 60:.1f} 分钟)", end="\r")
+        save()  # 每个方法跑完立刻落盘
     console.print()
     console.print(f"客观指标完成，用时 {(time.time() - t0) / 60:.1f} 分钟")
 
     # ── 2. CER（分层抽样）─────────────────────────────────────────────────
-    cer_rows = []
+    # cer_rows 不重新清空——续跑时它已经从 --out 缓存里加载了上次的结果，
+    # 清空的话就白跑了（第一次写这个脚本时就是这么把 50 分钟跑没的）。
     if not args.skip_cer:
         from rtse.asr.scoring import cer as cer_fn
         from rtse.asr.whisper_engine import WhisperASR
@@ -124,16 +154,24 @@ def main() -> int:
                       f"（每格 {args.cer_per_cell} 条）× ({len(methods)} 方法 + clean 上界)")
         engine = WhisperASR(model_size=args.asr_model)
         t1 = time.time()
+        done_cer = {r["method"] for r in cer_rows}
 
         # clean 上界：没有它就不知道"CER 降到多少算好"
-        for i, r in enumerate(sample):
-            txt = engine.transcribe(read_audio(root / r["clean"])).text
-            cer_rows.append({"id": r["id"], "method": "clean(上界)", "snr": r["snr"],
-                             "noise": r["noise"], "t60": r["t60"],
-                             "cer": cer_fn(r["text"], txt)})
-            console.print(f"  clean {i + 1}/{len(sample)}", end="\r")
+        if "clean(上界)" not in done_cer:
+            for i, r in enumerate(sample):
+                txt = engine.transcribe(read_audio(root / r["clean"])).text
+                cer_rows.append({"id": r["id"], "method": "clean(上界)", "snr": r["snr"],
+                                 "noise": r["noise"], "t60": r["t60"],
+                                 "cer": cer_fn(r["text"], txt)})
+                console.print(f"  clean {i + 1}/{len(sample)}", end="\r")
+            save()
+        else:
+            console.print("  clean(上界) 已完成，跳过")
 
         for mi, method in enumerate(methods):
+            if method in done_cer:
+                console.print(f"  [{mi + 1}/{len(methods)}] {method:<10} 已完成，跳过")
+                continue
             enh = _build(method, model_dir)
             pipe = Pipeline(enhancer=enh, vad=build_vad("energy"))
             for i, r in enumerate(sample):
@@ -147,14 +185,12 @@ def main() -> int:
                 el = time.time() - t1
                 console.print(f"  [{mi + 1}/{len(methods)}] {method:<10} "
                               f"{i + 1}/{len(sample)}  ({el / 60:.1f} 分钟)", end="\r")
+            save()  # 每个方法跑完立刻落盘
         console.print()
         console.print(f"CER 完成，用时 {(time.time() - t1) / 60:.1f} 分钟")
 
     # ── 3. 汇总 ───────────────────────────────────────────────────────────
-    out_path = Path(args.out)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps({"testset": str(root), "objective": rows, "cer": cer_rows},
-                                   ensure_ascii=False), encoding="utf-8")
+    save()
 
     console.print(f"\n{'method':<14}{'SI-SDR':>9}{'STOI':>8}{'ESTOI':>8}{'CER':>8}")
     console.print("-" * 47)
