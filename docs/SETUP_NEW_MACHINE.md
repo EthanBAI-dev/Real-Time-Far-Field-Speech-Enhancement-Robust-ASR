@@ -52,9 +52,9 @@ uv run rtse-doctor
 |---|---|---|
 | 全部源码 | ✅ 在仓库里 | |
 | **训练好的 ONNX 模型** | ✅ 在仓库里 | `models/crn-{nano,lite,large}.onnx`，约 9.5 MB，**clone 下来就能直接推理** |
-| Colab notebooks | ✅ 在仓库里 | `notebooks/v1_thchs30_musan/`、`notebooks/v2_dns_real_noise/` |
-| 评测结果 json | ✅ 在仓库里 | `results/*.json` |
-| **固定测试集** | ❌ 需要下载 | 约 463 MB，太大不入库 |
+| Colab notebooks | ✅ 在仓库里 | `notebooks/`（三个，按顺序跑） |
+| 评测结果 json | ⏸ 已清空 | 旧数据集的结果已移除，等新数据跑出 |
+| **固定测试集** | ❌ 需要下载 | 几百 MB，太大不入库；notebook 01 的产物 |
 | DNSMOS 模型 | ❌ 需要下载 | 微软的权重文件，不转发分发 |
 | 训练 checkpoint | ❌ 在 Drive 上 | `.pt` 含优化器状态，几十 MB，续训时才需要 |
 
@@ -63,11 +63,9 @@ uv run rtse-doctor
 从 Google Drive 下载 `testset.zip`（`MyDrive/Audio AI/RTSE/` 下，是 notebook 01 的产物），
 解压到项目根的 `data/`，使 `data/testset/index.json` 存在。
 
-拿到后**先验一遍再用**（这份数据踩过 I-21/I-22 两个坑）：
-
-```bash
-uv run python scripts/verify_testset_no_truncation.py data/testset
-```
+拿到后先看一眼 `index.json`：每条记录都带 `rt60_nominal`（标称）和
+`rt60_measured`（Schroeder 反向积分实测）。**两者应当接近**——踩过一次坑
+（I-22：标称 0.9 s 实测只有 0.63 s），此后一律以实测为准。
 
 ### 4.2 DNSMOS（要算无参考 MOS 才需要）
 
@@ -124,12 +122,9 @@ uv run python scripts/pack_for_colab.py
    代码改过就必须重传，否则 Colab 跑的还是旧逻辑——这个坑踩过：
    MCRA 修复和 ASR 模块都在本地改好了，Colab 那边却还是旧代码，
    跑出来的 `colab_metrics.json` 是过期数字。
-3. 打开对应版本的 notebook 按顺序跑。两个版本的说明分别在
-   [`v1 README`](../notebooks/v1_thchs30_musan/README.md) 和
-   [`v2 README`](../notebooks/v2_dns_real_noise/README.md)。
-
-> Drive 上 v1 和 v2 的数据/checkpoint 是物理隔离的（v2 在 `v2_dns_real_noise/` 子目录下），
-> 但**代码包 `rtse-colab.zip` 是共用的**，只需上传一份。
+3. 按顺序跑 `notebooks/` 下的三个 notebook。数据设计与理由见
+   [`notebooks/README.md`](../notebooks/README.md)，操作细节见
+   [`COLAB_GUIDE.md`](COLAB_GUIDE.md)。
 
 ---
 
@@ -138,9 +133,12 @@ uv run python scripts/pack_for_colab.py
 看 [`PROGRESS.md`](PROGRESS.md)（已完成）和 [`ISSUES.md`](ISSUES.md)（问题与修复记录）。
 接手时最该知道的三件事：
 
-1. **v2（DNS Challenge 真实噪声）还没跑过**——notebooks 已经写好并做过静态校验，
-   但下载 URL、分片解压结构都还没在 Colab 上实跑验证过。
-2. **测试集的 T60 扫描结论已作废**（I-22）——`make_rir()` 的镜像阶数 bug 已修，
-   但需要重新生成测试集才能拿到有效的混响维度数字。SNR × 噪声主表不受影响。
-3. **测试集的噪声和混响都还是 100% 合成的**（F-07）——v2 会补上真实噪声分层，
-   真实 RIR 分层还没做。这是当前最主要的方法学缺口。
+1. **数据集刚换过（2026-08-07），新流水线还没在 Colab 上实跑过。**
+   现在是 DNS Challenge 英文训练 + WenetSpeech 中文评测（跨语种泛化论证）。
+   之前基于 THCHS-30 + MUSAN 的两版已废弃删除，连带**所有旧指标和实验发现都已清空**——
+   `METRICS.md` 的主表和 `FINDINGS.md` 的 F-01~F-08 都是待重测状态。
+   旧内容在 git 历史里（`git show ad69d0b:docs/FINDINGS.md`）。
+2. **仓库里的 ONNX 模型是旧数据训出来的**，可以用来跑通链路和 Web 演示，
+   但**不是新数据集的结果**，正式指标要等重新训练。
+3. **跑完 01 要盯三个数字**（说话人数量是否合理、噪声平稳性两组比例、
+   合成 RIR 标称 vs 实测 RT60）——具体见 [`COLAB_GUIDE.md`](COLAB_GUIDE.md) 第 2 节。

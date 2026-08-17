@@ -249,16 +249,16 @@ VAD/
 - **验收**：`uv run rtse-enhance --method wiener in.wav out.wav` 出声且 SI-SDR 提升为正
 
 ### Phase 3 — 数据配方 ☁️Colab
-> 实际交付分成两版，都不删、并排保留做对比，见
-> [`notebooks/v1_thchs30_musan/README.md`](../notebooks/v1_thchs30_musan/README.md) 和
-> [`notebooks/v2_dns_real_noise/README.md`](../notebooks/v2_dns_real_noise/README.md)。
-> v1 用 THCHS-30 + MUSAN + RIRS_NOISES（已训练交付）；v2 把噪声/RIR 换成本节最初设想的
-> DNS Challenge 真实录制数据（干净语音仍是 THCHS-30，DNS 没有中文语料）。
-- [ ] `notebooks/01_data_prep.ipynb`
-- [ ] 下载：DNS5 干净语音子集 + 噪声子集、openSLR RIR、MUSAN 噪声、AISHELL-1 test
-- [ ] 合成训练/验证/测试集（严格按 SNR、噪声、T60 分层）
-- [ ] 产出 manifest（jsonl）+ 打包测试集（< 2 GB）到 Drive
-- **验收**：本地能下载并加载测试集，`rtse-eval --dry-run` 通过
+> **2026-08-07 数据集定稿**（此前基于 THCHS-30 + MUSAN 的两版已废弃并删除）。
+> 完整设计与理由见 [`notebooks/README.md`](../notebooks/README.md)。
+- [x] `notebooks/01_data_prep.ipynb`（已写，**尚未在 Colab 实跑**）
+- [x] 训练语音：DNS Challenge 4 `read_speech` 1 分片（≈21 小时，独立可解压）
+- [x] 噪声：DNS `noise_fullband`（AudioSet + Freesound），**按平稳性自动分两组**
+      （`rtse.dsp.stationarity`，DNS 不带这个标注，从信号本身算）
+- [x] RIR：DNS 真实 IR + 本项目合成（镜像源法），测试集里**并行分层**
+- [x] 中文 ASR 评测：WenetSpeech `test_meeting`（HF 镜像，无需填表）
+- [x] 测试集分层：SNR{−5,0,5,10,15} × 噪声{稳态,非稳态} × RIR{合成 4 档 RT60, 真实}
+- **验收**：本地能下载并加载测试集，`uv run rtse-eval` 跑通
 
 ### Phase 4 — 模型与训练 ☁️Colab
 - [ ] `notebooks/02_train.ipynb`
