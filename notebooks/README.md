@@ -10,8 +10,8 @@
 | 用途 | 数据集 | 规模 | 选它的理由 |
 |---|---|---|---|
 | **训练干净语音** | DNS Challenge 4 `read_speech` | 1 分片 ≈ 21 小时 | 学术界公认基准；**分片独立可单独解压**，能做小规模子集 |
-| **训练噪声** | DNS `noise_fullband`（AudioSet + Freesound） | 3 分片 ≈ 13 GB | 真实录制，覆盖面远超 MUSAN；按平稳性自动分两组 |
-| **房间冲激响应** | DNS `impulse_responses` **+ 本项目合成** | 5.9 GB + 0 | 真实的验泛化，合成的做**受控 RT60 扫描** |
+| **训练噪声** | DNS `noise_fullband`（AudioSet + Freesound） | 3 分片 ≈ 14.2 GB | 真实录制，覆盖面远超 MUSAN；按平稳性自动分两组 |
+| **房间冲激响应** | DNS `impulse_responses` **+ 本项目合成** | 0.26 GB + 0 | 真实的验泛化，合成的做**受控 RT60 扫描** |
 | **中文 ASR 评测** | WenetSpeech `test_meeting` | 220 MB | 真实会议录音，带中文转写 |
 
 ### 为什么训练用英文、评测用中文
@@ -41,9 +41,16 @@ DNS 完整语料约 892 GB（其中 `read_speech` 就有 299 GB），下载解�
 DNS 的噪声文件**不带平稳性标注**（只有 RIR 有 T60/isReal 那类元数据），
 所以用 [`rtse.dsp.stationarity`](../src/rtse/dsp/stationarity.py) 从信号本身算：
 时间轴平滑 → 帧能量去趋势 → 取 P95−P05 动态范围。
-本地已在 7 类构造上已知平稳性的合成噪声上验证过分类全部正确
-（见 [`tests/test_stationarity.py`](../tests/test_stationarity.py)）。
+本地在构造上已知平稳性的合成噪声上验证过（见
+[`tests/test_stationarity.py`](../tests/test_stationarity.py)）：
+white / pink / hum 稳定判为稳态，babble / cafeteria / keyboard 稳定判为非稳态，
+**跨 12 个随机种子判决一致**。
 
+> ⚠️ **已知限制**：极低频主导 + 慢调制的噪声（如 `car` 型）判决**不稳定**，
+> 实测跨种子动态范围 0.67~16.22 dB，横跨门限。试过限带到语音频段规避——
+> 反而更糟（babble 被压到与之重叠）。这个限制可以接受，因为本模块的用途是
+> 给几万个文件**分组**而非给单个文件下权威判决。
+>
 > 门限 9.0 dB 是在合成噪声上标定的，真实录音分布更连续。
 > notebook 里会打印两组的数量，比例悬殊（比如 9:1）就该调门限。
 
