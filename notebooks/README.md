@@ -9,7 +9,7 @@
 
 | 用途 | 数据集 | 规模 | 选它的理由 |
 |---|---|---|---|
-| **训练干净语音** | DNS Challenge 4 `read_speech` | 1 分片 ≈ 21 小时 | 学术界公认基准；**分片独立可单独解压**，能做小规模子集 |
+| **训练干净语音** | DNS Challenge **5** `read_speech` | 1 切片 ≈ 19 小时 | 学术界公认基准；切片可**部分解压**做小规模子集（见下） |
 | **训练噪声** | DNS `noise_fullband`（AudioSet + Freesound） | 3 分片 ≈ 14.2 GB | 真实录制，覆盖面远超 MUSAN；按平稳性自动分两组 |
 | **房间冲激响应** | DNS `impulse_responses` **+ 本项目合成** | 0.26 GB + 0 | 真实的验泛化，合成的做**受控 RT60 扫描** |
 | **中文 ASR 评测** | WenetSpeech `test_meeting` | 220 MB | 真实会议录音，带中文转写 |
@@ -123,23 +123,47 @@ white / pink / hum 稳定判为稳态，babble / cafeteria / keyboard 稳定判�
 
 上 Colab 之前先在本地做了能做的验证，抓到 1 个真 bug、暴露 1 个真限制。
 
-### ✅ 全部下载 URL 实测有效
+### ✅ 全部下载 URL 实测有效（DNS5）
 
 HEAD 请求逐个核实，并拿到**实际体积**（不下载内容）：
 
 | 分片 | 实际大小 |
 |---|---|
-| `read_speech_000`（语音，默认取这片） | 4.66 GB |
+| `read_speech.tgz.partaa`（语音，默认取这片） | 5.24 GB |
 | `audioset_000` / `audioset_001`（噪声） | 5.36 GB × 2 |
 | `freesound_000`（噪声） | 3.47 GB |
 | `impulse_responses_000`（RIR） | 0.26 GB |
 | WenetSpeech `test_meeting` parquet | 0.22 GB |
-| **默认配置合计** | **19.3 GB** |
+| **默认配置合计** | **19.9 GB** |
 
 > 🐛 **抓到一个真 bug**：IR 分片最初写成
 > `impulse_responses/datasets_fullband.impulse_responses_000.tar.bz2`，
 > 实测 **404**。它在 blob 根目录下**没有目录前缀**（语音和噪声分片才有）。
 > 已修正。这个错误不本地验证的话，要等 Colab 上下载完 19 GB 才会暴露。
+
+### ✅ DNS5 语音切片可以"只下一部分"
+
+DNS5 的干净语音是 `split` 切成的 `.tgz.partaa` ~ `.partau`，官方用法是全部
+下载后 `cat *.part* | tar xz`。但 **gzip 是顺序流格式**——只下第一片再直接
+`tar -xzf` 也能解出前面一大批**完整**文件，走到被切断处报 `Unexpected EOF`，
+那是预期的，忽略即可（`fetch_dns(..., partial_ok=True)` 就是干这个的）。
+
+用 HTTP Range 取前 80 MB 实测（服务端返回 206，Range 可用）：
+
+- 解出 **231 个完整 wav**，全部可正常读取
+- 格式 **48 kHz 单声道**（下游 `read_audio` 会重采样到 16 kHz）
+- 时长 min 1.1 / 中位 4.9 / max 10.3 秒，231 个文件共 18.3 分钟
+- 据此推算整片（5.24 GB）约 **19 小时**，正落在 20~30 小时的目标区间
+
+> 🐛 **抓到第二个真 bug，而且是致命的**：DNS5 的文件名形如
+> `book_00000_chp_0009_reader_06709_0_seg_1_seg1.wav`，
+> 说话人 id 藏在 `reader_XXXXX` 段里。原来的 `stem.split('_')[0]`
+> 会对**每个文件**返回 `"book"`，**所有语音归成一个说话人**，
+> 说话人划分彻底失效、指标虚高。改用 `re.search(r'reader_(\d+)', ...)`，
+> 并在 notebook 里加了自检断言（提取出的说话人数落在合理区间才继续）。
+>
+> 这 231 个文件切出 **47 位说话人**——注意这只是 80 MB 前缀的采样，
+> **不是整片的说话人总数**（整片约 1.5 万个文件，说话人会多得多）。
 
 ### ✅ WenetSpeech 数据实测可用
 
