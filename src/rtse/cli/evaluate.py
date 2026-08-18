@@ -31,6 +31,22 @@ from rtse.cli._console import console
 METHODS_DSP = ("specsub", "wiener", "mmse-lsa")
 
 
+def _make_pipeline(enh, vad_name: str, vad_gate: bool, gate_floor_db: float):
+    """统一两处（客观指标 / CER）的 Pipeline 构造，避免两处配置漂移。
+
+    `vad_gate=False` 时 VAD 只是被跑了一遍算 ``is_speech``，从不接触增强后的
+    频谱——门控开关必须在这一层生效，DSP/神经网络增强器的接口本身不接受
+    VAD 输入（见 docs/ISSUES.md I-34）。
+    """
+    from rtse.runtime import Pipeline
+    from rtse.vad import build_vad
+
+    return Pipeline(
+        enhancer=enh, vad=build_vad(vad_name), vad_gate=vad_gate,
+        gate_floor_db=gate_floor_db,
+    )
+
+
 def _build(method: str, model_dir: Path):
     """按方法名构造增强器。``none`` 返回 None，表示不做任何处理。"""
     if method == "none":
@@ -161,6 +177,22 @@ def main() -> int:
     p.add_argument("--asr-model", default="small", help="faster-whisper 规格，默认 small")
     p.add_argument("--restart", action="store_true",
                    help="忽略 --out 里已有的缓存，从头跑（默认是续跑）")
+    # choices 从注册表动态取，**不要写死**：第一版写死了 ('energy','webrtc')，
+    # 后来新增 SileroVAD 时忘了回来同步，`--vad silero` 直接被 argparse 拒掉，
+    # 而错误信息看起来像"这个 VAD 不存在"，其实它已经注册好了。
+    # 和 I-29 是同一类问题：两处各自演进、中间靠一份手写清单隐式耦合。
+    from rtse.vad import VAD_METHODS
+
+    p.add_argument("--vad", default="energy", choices=tuple(sorted(VAD_METHODS)),
+                   help="Pipeline 里用哪个 VAD，默认 energy。仅在 --vad-gate 打开时"
+                        "影响输出——不开门控时 VAD 只跑一遍算 is_speech 供诊断，"
+                        "不接触增强后的频谱（见 docs/ISSUES.md I-34）")
+    p.add_argument("--vad-gate", action="store_true",
+                   help="打开 VAD 门控：静音段的增强输出按非对称包络衰减到"
+                        "--vad-gate-floor-db。默认关闭——历史评测数字都是"
+                        "vad_gate=False 跑出来的，VAD 从未真正参与过增强")
+    p.add_argument("--vad-gate-floor-db", type=float, default=-20.0,
+                   help="门控关闭时的衰减下限，默认 -20 dB")
     args = p.parse_args()
 
     root = Path(args.testset)
@@ -193,8 +225,6 @@ def main() -> int:
         return 1
 
     from rtse.metrics.intrusive import estoi, seg_snr, si_sdr, stoi
-    from rtse.runtime import Pipeline
-    from rtse.vad import build_vad
 
     console.print(f"[bold]测试集[/bold] {root}  {len(records)} 条 × {len(methods)} 方法")
     console.print(f"[dim]用途={idx.get('purpose', 'unknown')}  分层={strata}[/dim]")
@@ -224,6 +254,18 @@ def main() -> int:
                 )
                 console.print("请换一个 --out，或加 --restart 明确重跑，不能混用两套CER。")
                 return 1
+        # VAD 门控会改变增强输出本身，不像 CER 那样只是抽样口径不同——
+        # 混用两种门控配置的结果拼进同一份 summary 会得出无意义的均值。
+        if cached.get("objective") or cached.get("cer"):
+            old_vad = cached.get("vad", "energy")
+            old_gate = bool(cached.get("vad_gate", False))
+            if old_vad != args.vad or old_gate != args.vad_gate:
+                console.print(
+                    f"[red]VAD 配置与缓存不同：已有 vad={old_vad}, vad_gate={old_gate}；"
+                    f"本次 vad={args.vad}, vad_gate={args.vad_gate}。[/red]"
+                )
+                console.print("请换一个 --out，或加 --restart 明确重跑，不能混用两种门控配置。")
+                return 1
         rows = cached.get("objective", [])
         cer_rows = cached.get("cer", [])
         done_obj = {r["method"] for r in rows}
@@ -241,6 +283,9 @@ def main() -> int:
                 "strata": list(strata),
                 "asr_model": args.asr_model,
                 "cer_per_cell": cer_per_cell,
+                "vad": args.vad,
+                "vad_gate": args.vad_gate,
+                "vad_gate_floor_db": args.vad_gate_floor_db,
                 "objective": rows,
                 "cer": cer_rows,
                 "summary": _result_summary(rows, cer_rows),
@@ -272,7 +317,7 @@ def main() -> int:
         # 就是 780 次加载），但每条样本前必须 reset() —— 增强器内部有状态
         # （噪声估计、GRU 隐状态），不清会让上一条的尾部状态泄漏到下一条开头。
         enh = _build(method, model_dir)
-        pipe = Pipeline(enhancer=enh, vad=build_vad("energy"))
+        pipe = _make_pipeline(enh, args.vad, args.vad_gate, args.vad_gate_floor_db)
         for i, r in enumerate(records):
             clean = read_audio(root / r["clean"])
             noisy = read_audio(root / r["noisy"])
@@ -332,7 +377,7 @@ def main() -> int:
                 console.print(f"  [{mi + 1}/{len(methods)}] {method:<10} 已完成，跳过")
                 continue
             enh = _build(method, model_dir)
-            pipe = Pipeline(enhancer=enh, vad=build_vad("energy"))
+            pipe = _make_pipeline(enh, args.vad, args.vad_gate, args.vad_gate_floor_db)
             for i, r in enumerate(sample):
                 noisy = read_audio(root / r["noisy"])
                 pipe.reset()

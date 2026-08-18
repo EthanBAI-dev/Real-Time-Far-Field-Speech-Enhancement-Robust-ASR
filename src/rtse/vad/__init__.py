@@ -5,13 +5,17 @@ from __future__ import annotations
 from rtse.audio.stft import DEFAULT_CONFIG, STFTConfig
 from rtse.vad.base import StreamingVAD, VADFrame
 from rtse.vad.energy import EnergyVAD
+from rtse.vad.silero import SileroVAD
 from rtse.vad.webrtc import WebRTCVAD
 
-__all__ = ["StreamingVAD", "VADFrame", "EnergyVAD", "WebRTCVAD", "VAD_METHODS", "build_vad"]
+__all__ = [
+    "StreamingVAD", "VADFrame", "EnergyVAD", "WebRTCVAD", "SileroVAD", "VAD_METHODS", "build_vad",
+]
 
 VAD_METHODS: dict[str, type[StreamingVAD]] = {
     EnergyVAD.name: EnergyVAD,
     WebRTCVAD.name: WebRTCVAD,
+    SileroVAD.name: SileroVAD,
 }
 
 

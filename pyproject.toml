@@ -24,6 +24,7 @@ dependencies = [
     "opencc-python-reimplemented>=0.1.7",  # 繁体->简体（纯 Python，Windows 不用编译）
     # --- VAD ---
     "webrtcvad-wheels>=2.0.14",   # 官方 webrtcvad 无 Windows wheel，用带预编译的 fork
+    "silero-vad>=6.2.1",          # 权重打包在 pip 包里，onnx=True 不需要联网下载
     # --- ASR ---
     "faster-whisper>=1.0",
     # --- Web 服务 ---
