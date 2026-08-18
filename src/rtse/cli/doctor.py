@@ -22,7 +22,7 @@ from rich.table import Table
 
 from rtse import HOP_LENGTH, N_FFT, SAMPLE_RATE, __version__
 from rtse.cli._console import console
-from rtse.paths import DATA_DIR, MODELS_DIR, PROJECT_ROOT, RESULTS_DIR, LOCAL_DISK_WARN_FREE_GB
+from rtse.paths import DATA_DIR, LOCAL_DISK_WARN_FREE_GB, MODELS_DIR, PROJECT_ROOT, RESULTS_DIR
 
 OK, WARN, FAIL = "ok", "warn", "fail"
 _MARK = {OK: "[green]✓[/green]", WARN: "[yellow]![/yellow]", FAIL: "[red]✗[/red]"}
@@ -223,7 +223,7 @@ def _check_assets():
     """检查 Colab 侧产物是否已经落地（Phase 3/4 之前必然是缺的，属正常）。"""
     items = {
         "增强模型 (models/*.onnx)": list(MODELS_DIR.glob("*.onnx")),
-        "测试集 (data/testset)": list(DATA_DIR.glob("testset*")),
+        "V1测试集 (data/testsets/*)": list((DATA_DIR / "testsets").glob("*/index.json")),
         "评测结果 (results/*.json)": list(RESULTS_DIR.glob("*.json")),
     }
     lines = [f"{'有' if v else '无'} · {k}" for k, v in items.items()]

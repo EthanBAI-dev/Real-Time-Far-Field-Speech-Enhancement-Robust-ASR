@@ -1,7 +1,7 @@
 [project]
 name = "rtse"
 version = "0.1.0"
-description = "Real-time far-field speech enhancement and ASR robustness system"
+description = "Real-time single-channel speech denoising for robust Chinese ASR"
 readme = "README.md"
 # 3.11 是当前音频/ML 生态在 Windows 上 wheel 覆盖最完整的版本。
 # 不用 3.12+/3.14：pesq、ctranslate2、onnxruntime 等存在缺 wheel 的风险，

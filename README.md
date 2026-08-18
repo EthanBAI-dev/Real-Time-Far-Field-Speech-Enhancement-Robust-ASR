@@ -1,18 +1,21 @@
 # RTSE
 
-**Real-Time Far-Field Speech Enhancement for Robust ASR**
-远场语音增强与 ASR 鲁棒性系统
+**Real-Time Single-Channel Speech Denoising for Robust Chinese ASR**
+单通道实时语音降噪与中文 ASR 鲁棒性系统
 
 [![tests](https://github.com/EthanBAI-dev/Real-Time-Far-Field-Speech-Enhancement-Robust-ASR/actions/workflows/tests.yml/badge.svg)](https://github.com/EthanBAI-dev/Real-Time-Far-Field-Speech-Enhancement-Robust-ASR/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](pyproject.toml)
 
 ```
-麦克风 → VAD → 去混响 → 降噪(DSP 基线 vs 神经网络) → [波束形成] → ASR → 实时字幕
+麦克风 → VAD（分段/显示）→ 去噪（DSP vs CRN）→ 中文 ASR → 实时字幕
 ```
 
-一条**可实时运行、可量化、可演示**的语音前端链路，用完整的指标矩阵回答：
+一条**可实时运行、可量化、可演示**的单通道去噪前端链路，用职责分离的指标矩阵回答：
 **语音增强让 ASR 字错率降低了多少，代价是多少毫秒延迟和多少 CPU。**
+
+> V1 不宣称去混响。RIR 是训练/测试中的混响环境变量，模型目标是
+> “带混响、无加性噪声”的语音。真正的去混响作为后续独立课题，避免把两个任务混在一起。
 
 ---
 
@@ -48,18 +51,25 @@ uv run rtse-server
 | Phase 0 文档与骨架 | ✅ |
 | Phase 1 环境搭建 | ✅ `rtse-doctor` 11 项实测检查全通过 |
 | Phase 2 信号与 DSP 核心 | ✅ STFT / VAD×2 / DSP×3 / 指标 / RT60 估计 / 噪声平稳性判别 |
-| Phase 3 数据配方 | ☁️ **notebook 已就绪，待在 Colab 执行**（2026-08-07 数据集定稿） |
-| Phase 4 模型与训练 | ✅ 代码完成 + ONNX 导出已验证 ｜ ☁️ 待用新数据重训 |
-| Phase 5 本地评测 | ✅ `rtse-eval` 已实现（含 CER，支持断点续跑）｜ ⏸ 待新数据 |
+| Phase 3 数据配方 | ✅ V1 三测试集 notebook 已就绪：DNS 客观质量 / AISHELL 受控 CER / WenetSpeech 真实 CER |
+| Phase 4 模型与训练 | ✅ 代码与 ONNX 流式导出完成 ｜ ☁️ 待用“高 SNR + 恒等样本”修复配方重训 |
+| Phase 5 本地评测 | ✅ `rtse-eval` 按数据集能力自动选指标、支持动态分层与断点续跑 |
 | Phase 6 Web 演示 | ✅ DSP 部分已实测验收；ASR 字幕待接入 |
 | Phase 7 C++ 实时版 | ⏸ 需先装 CMake + MSVC（见 ISSUES.md I-03） |
 
-**测试：174 项全部通过。**
+> ⚠️ 当前仓库中的 DNS 训练模型是**修复训练分布之前的诊断基线**：能改善有噪代理样本，
+> 但对干净输入过抑制，并使 WenetSpeech CER 恶化。新配方已修正，必须重训后才能作为最终结果。
 
-> ⚠️ **2026-08-07 更换了数据集**：THCHS-30 + MUSAN → **DNS Challenge 训练 +
-> WenetSpeech 中文评测**（跨语种泛化论证，见 [notebooks/README.md](notebooks/README.md)）。
-> 旧数据集上的所有实验结果**已从文档中清空**，等新数据跑出后重填。
-> 仓库里的 ONNX 模型是旧数据训出来的，可用于跑通链路和演示，但不是新数据集的结果。
+## V1 数据职责
+
+完整的数据来源、隔离规则和指标前提见 [docs/DATASETS_V1.md](docs/DATASETS_V1.md)。
+
+| 用途 | 数据 | 指标 |
+|---|---|---|
+| 训练 | DNS5 `read_speech` 小子集 + 真实 DNS 噪声/RIR，在线混音 | 训练/验证损失 |
+| 声学质量 | DNS5 留出语音 + 留出噪声 + RT60 匹配的真实/合成 RIR | SI-SDR、STOI、ESTOI、PESQ、DNSMOS |
+| 受控中文识别 | AISHELL-1 test + 同一噪声/RIR 矩阵 | CER + 声学指标 |
+| 真实会议泛化 | WenetSpeech `test_meeting` 原始录音，不二次退化 | 增强前后 CER |
 
 ---
 
@@ -89,11 +99,12 @@ uv run rtse-server
 | 文档 | 内容 |
 |---|---|
 | [docs/PLAN.md](docs/PLAN.md) | **总体方案**：架构、选型理由、8 个阶段与验收标准、风险预案 |
+| [docs/DATASETS_V1.md](docs/DATASETS_V1.md) | **V1数据证据链**：来源、隔离、分层、指标前提与结论权限 |
 | [notebooks/README.md](notebooks/README.md) | **数据设计** —— 用了哪些数据集、为什么、测试集怎么分层 |
 | [docs/SETUP_NEW_MACHINE.md](docs/SETUP_NEW_MACHINE.md) | **换机器接手** —— 从零跑起来需要什么、缺什么、去哪拿 |
 | [docs/COLAB_GUIDE.md](docs/COLAB_GUIDE.md) | **Colab 侧操作手册** —— 你要执行的部分 |
 | [docs/PROGRESS.md](docs/PROGRESS.md) | 完成记录（只记已验证的事实） |
-| [docs/ISSUES.md](docs/ISSUES.md) | 问题记录（23 条，含根因与解法） |
+| [docs/ISSUES.md](docs/ISSUES.md) | 问题记录（含根因、证据与解法） |
 | [docs/FINDINGS.md](docs/FINDINGS.md) | **实验发现** —— 违反直觉、值得深挖的现象 |
 | [docs/METRICS.md](docs/METRICS.md) | 指标定义、测量方法学、结果表 |
 | [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md) | 本机环境勘察与由此产生的技术决策 |
@@ -139,7 +150,7 @@ src/rtse/
 ├── vad/        能量+谱平坦度（自研）、WebRTC
 ├── dsp/        谱减、维纳、MMSE-LSA、MCRA 噪声估计、RT60 估计、噪声平稳性判别
 ├── models/     CRN-Lite 因果流式增强网络（本地与 Colab 共用）
-├── data/       合成噪声/镜像源法 RIR/按活跃段的 SNR 混音、在线混音数据集
+├── data/       在线混音 + DNS/AISHELL/WenetSpeech 三套固定评测集生成
 ├── train/      损失、训练循环、ONNX 流式导出与三层校验
 ├── runtime/    逐帧管线、延迟计量、ONNX 适配器
 ├── metrics/    SI-SDR/SDR/SegSNR（自研）、STOI/ESTOI、指标注册表

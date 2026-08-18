@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import sys
 import zipfile
 from pathlib import Path
 
@@ -25,12 +26,14 @@ OUT = ROOT / "dist" / "rtse-colab.zip"
 # 黑名单总会漏掉新出现的大目录，白名单不会。
 INCLUDE_FILES = ["pyproject.toml", "README.md"]
 INCLUDE_DIRS = ["src", "configs", "tests"]
-INCLUDE_DOCS = ["PLAN.md", "COLAB_GUIDE.md", "FINDINGS.md", "ISSUES.md"]
+INCLUDE_DOCS = ["PLAN.md", "COLAB_GUIDE.md", "DATASETS_V1.md", "FINDINGS.md", "ISSUES.md"]
 
 SKIP_PARTS = {"__pycache__", ".pytest_cache", ".ruff_cache", ".ipynb_checkpoints"}
 
 
 def main() -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     OUT.parent.mkdir(parents=True, exist_ok=True)
     n = 0
     with zipfile.ZipFile(OUT, "w", zipfile.ZIP_DEFLATED) as z:

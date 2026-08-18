@@ -1,10 +1,8 @@
 # 指标定义与结果
 
-> **数据集已于 2026-08-07 更换**（THCHS-30 + MUSAN → DNS Challenge 训练 +
-> WenetSpeech 中文评测，见 [`notebooks/README.md`](../notebooks/README.md)）。
-> 旧数据集上测出的所有结果**已从本文档移除**——它们在新数据上不成立，
-> 留着只会造成混淆。需要查阅的话在 git 历史里（`git log -- docs/METRICS.md`，
-> 提交 `ad69d0b` 之前）。
+> **2026-08-18 V1 方向校正**：正式结果拆为 DNS客观质量、AISHELL受控中文CER、
+> WenetSpeech真实会议CER三张表。下方旧WenetSpeech混合结果只保留为发现过抑制的
+> 诊断证据，不再当作最终模型成绩。
 >
 > 本文档的**指标定义、测量方法学、复杂度/实时性数字**保留——
 > 那些只跟代码和硬件有关，跟用哪份数据无关。
@@ -104,7 +102,31 @@ MMSE-LSA 比维纳慢 60%，代价来自 `scipy.special.exp1`（指数积分）�
 
 ---
 
-## 3. 主表：CER 实测（2026-08-18）
+## 3. V1 正式结果表（待新配方重训与三测试集回传）
+
+### 3.1 DNS 客观质量
+
+| 方法 | SI-SDR | ΔSI-SDR | STOI | ESTOI | PESQ | DNSMOS |
+|---|---:|---:|---:|---:|---:|---:|
+| noisy | 待测 | — | 待测 | 待测 | 待测 | 待测 |
+| DSP / 新CRN | 待测 | 待测 | 待测 | 待测 | 待测 | 待测 |
+
+### 3.2 AISHELL-1 受控中文 CER
+
+| 方法 | clean上界 CER | noisy CER | enhanced CER | ΔCER |
+|---|---:|---:|---:|---:|
+| 待新数据 | 待测 | 待测 | 待测 | 待测 |
+
+### 3.3 WenetSpeech 真实会议 CER
+
+| 方法 | 原始输入 CER | 增强后 CER | ΔCER |
+|---|---:|---:|---:|
+| 待新数据 | 待测 | 待测 | 待测 |
+
+> WenetSpeech 没有“clean上界”行，也不计算 SI-SDR/STOI/PESQ；它的原始会议录音
+> 本身就是待处理输入。AISHELL与DNS的真实/合成RIR按相同实测RT60桶比较。
+
+## 4. 旧单测试集诊断结果（2026-08-18，不作为最终成绩）
 
 **数据来源**：`uv run rtse-eval --cer-per-cell 2`，
 [`results/local_metrics.json`](../results/local_metrics.json)。
@@ -117,7 +139,7 @@ ASR 用 faster-whisper `small`。
 > 测试集已在 `index.json` 里声明 `reference_is_clean=false`，`rtse-eval` 自动跳过。
 > **CER 不受影响**——它比的是识别文本与人工转写，不经过参考音频。
 
-### 3.1 主表
+### 4.1 主表
 
 | 方法 | CER | ΔCER | 参数量 | RTF | p99 |
 |---|---|---|---|---|---|
@@ -132,7 +154,7 @@ ASR 用 faster-whisper `small`。
 **没有任何方法显著改善 CER**，谱减法基本持平（−0.005，在噪声范围内），
 其余全部变差，**神经网络反而最差**。详细解读见 [`FINDINGS.md`](FINDINGS.md) F-10。
 
-### 3.2 按维度拆开（ΔCER，负 = 有帮助）
+### 4.2 按维度拆开（ΔCER，负 = 有帮助）
 
 **按噪声平稳性** —— 这一栏的结果**与设计假设相反**：
 
@@ -165,7 +187,7 @@ ASR 用 faster-whisper `small`。
 > ⚠️ 这一栏受 F-09 的混淆变量影响（真实 RIR 中位 RT60 2.20 s vs 合成扫描上限 0.91 s），
 > 差异无法归因到"合成 vs 真实"这一个因素上。
 
-### 3.3 必须标注的局限
+### 4.3 必须标注的局限
 
 1. **样本量小**：`STRATA=(snr, noise_kind, rir_kind)` 只有 **20 格**，
    每方法 **40 条**（每格 2 条）。**4 档合成 RT60 被折叠成 `synth` 一档**，
@@ -177,7 +199,7 @@ ASR 用 faster-whisper `small`。
 4. **PESQ / DNSMOS 仍未填**：PESQ 本地装不上（I-05），
    且要等有干净参考的测试集；DNSMOS 模型文件已就位但打分函数未实现。
 
-## 4. 测量方法学
+## 5. 测量方法学
 
 为了让数字可信、可复现：
 

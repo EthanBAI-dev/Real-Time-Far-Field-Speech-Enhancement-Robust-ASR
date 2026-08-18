@@ -335,4 +335,22 @@
   = 50 格 × 15 条 = 750 样本。每条同时记 `rt60_nominal` 和 `rt60_measured`
 - 三个 notebook 重写完成，通过语法 + shell 引号静态校验，**尚未在 Colab 实跑**
 
+### 2026-08-18（续）— V1 方向校正：从单一混合测试集拆成三套证据链
+
+- 项目边界收敛为**单通道实时去噪 + 中文ASR鲁棒性**；RIR是混响环境变量，
+  训练目标保留混响，V1不再宣称去混响。
+- 新增 `rtse.data.benchmarks`：
+  - DNS5留出语音生成客观质量集；
+  - AISHELL-1 test生成受控中文CER集；
+  - WenetSpeech meeting保持原始录音，生成真实会议CER集；
+  - 真实RIR按实测RT60分到0.2/0.4/0.6/0.8秒四档，与同档合成RIR比较。
+- `rtse-eval` 改为读取每个 `index.json` 的 `strata`、`reference_is_clean` 和
+  `cer_upper_is_meaningful`，按数据能力自动跳过不成立的指标。
+- 三个Colab notebook已同步；冒烟规模为两套受控集各81条、真实会议30条、
+  Nano 3 epoch，正式规模为405/405/300条。
+- 新增本地测试，锁定“RT60不得折叠”和“真实会议不得伪造clean上界”两条不变量。
+- 验证完成：完整 `pytest` 通过（2项按环境跳过、1项为已登记的严格 xfail），
+  三个 notebook 的非 magic Python 代码全部通过编译检查；新数据/评测相关文件通过
+  Ruff；Colab 代码包成功生成，包含 67 个文件。
+
 <!-- 后续条目在此追加 -->

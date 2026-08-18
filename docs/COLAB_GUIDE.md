@@ -43,7 +43,7 @@ DRIVE_ROOT = '/content/drive/MyDrive/Audio AI/RTSE'
 
 - ❌ **别选 TPU**：本模型是 GRU + 因果卷积的流式结构，TPU 没有收益还要折腾 XLA。
 - ❌ **别选 CPU**：会慢几十倍。
-- 模型很小（最大 crn-large 也只有 1.77 M 参数），T4 的显存绰绰有余。
+- V1 最大的 crn-lite 约0.57M参数，T4显存绰绰有余。
   **真正的约束是 vCPU 数量和磁盘**，不是 GPU。
 
 ---
@@ -60,12 +60,14 @@ MyDrive/Audio AI/RTSE/                ← DRIVE_ROOT（持久，不受会话断�
 │   ├── datasets_fullband.clean_fullband.read_speech_000_*.tar.bz2
 │   ├── datasets_fullband.noise_fullband.audioset_*.tar.bz2
 │   ├── datasets_fullband.impulse_responses_000.tar.bz2
+│   ├── aishell1_test_0000.parquet
 │   └── wenetspeech_test_meeting.parquet
 ├── manifest.json                     数据清单（含噪声平稳性分组结果）
-├── testset/                          固定测试集（带噪 + 干净参考 + 中文转写）
-│   ├── index.json
-│   └── audio/*.wav
-├── testset.zip                       打包好供下载
+├── testsets/
+│   ├── dns_objective/                客观质量，有无噪参考
+│   ├── aishell_controlled/            受控中文 CER，有无噪参考
+│   └── wenetspeech_real/              原始会议 CER，无 clean 音频上界
+├── testsets_v1.zip                   三套测试集打包
 ├── checkpoints/<模型名>/              ★ 训练结果
 │   ├── last.pt                       每 epoch 覆盖写，用于断点续训
 │   ├── best.pt                       验证 SI-SDR 最优，导出用它
@@ -90,7 +92,8 @@ DATA_MODE = 'hybrid'      # 语料怎么放
 N_SPEECH_SHARDS = 1       # DNS 语音分片数，1 片 ≈ 21 小时
 N_AUDIOSET_SHARDS = 2     # DNS 噪声分片（AudioSet 来源）
 N_FREESOUND_SHARDS = 1    # DNS 噪声分片（Freesound 来源）
-QUICK_TEST = False        # True = 只下 WenetSpeech（约 520 MB）验证链路
+QUICK_TEST = False        # V1 必须保持 False
+SMOKE_RUN = True          # 先跑小规模闭环；正式结果再改 False
 ```
 
 **`DATA_MODE`**：
@@ -108,9 +111,10 @@ QUICK_TEST = False        # True = 只下 WenetSpeech（约 520 MB）验证链�
 > 和 `<DATA>/.<name>.extracted`（本地盘，会话内有效）。
 > 新会话里前者还在、后者没了 → 只解压，不重下。
 
-**`QUICK_TEST`**：设成 `True` 跳过 DNS 大文件，只下 WenetSpeech（约 520 MB），
-十几分钟就能把「数据 → 训练 → 导出 → 回传」整条链路跑通一遍。
-**第一次强烈建议先这样跑**，确认流程没问题再投入几小时下载和训练。
+**`SMOKE_RUN`**：V1 的推荐起点。下载仍使用同一批 DNS 最小分片，但生成量降为
+每套受控集81条（含clean→clean无害性格）、真实会议30条，训练只跑Nano 3 epoch。
+它用于验证链路，结果不作数。
+`QUICK_TEST` 已停用，因为没有 DNS 留出噪声/RIR 就无法验证受控评测和训练闭环。
 
 ---
 
@@ -120,9 +124,9 @@ QUICK_TEST = False        # True = 只下 WenetSpeech（约 520 MB）验证链�
 
 | # | Notebook | 做什么 | 耗时 | 产出 |
 |---|---|---|---|---|
-| 1 | `01_data_prep.ipynb` | 下载语料、噪声平稳性分类、合成固定测试集 | 1~2 h（主要是下载） | `manifest.json`、`testset/` |
+| 1 | `01_data_prep.ipynb` | 下载语料、分类噪声、生成三套固定测试集 | 1~2 h（主要是下载） | `manifest.json`、`testsets_v1.zip` |
 | 2 | `02_train.ipynb` | 训练 2~3 档模型 | **看第一个 epoch 的实测值** | `checkpoints/*/best.pt` |
-| 3 | `03_export_eval.ipynb` | 导出流式 ONNX + 算 PESQ | 约 20 min | `models/*.onnx`、`colab_metrics.json` |
+| 3 | `03_export_eval.ipynb` | 导出流式 ONNX + 在 DNS 客观集算 PESQ | 约 20 min | `models/*.onnx`、`colab_metrics.json` |
 
 每个 notebook 的**前几个 cell 是固定的**：挂载 Drive → 配置 → 安装代码 → 自检。
 
@@ -130,16 +134,14 @@ QUICK_TEST = False        # True = 只下 WenetSpeech（约 520 MB）验证链�
 （STFT 逐帧一致、dBFS 标定精确到 0.000 dB）。这里一旦有偏差，
 训练出来的模型拿回本地就会掉点，而且极难定位 —— 两边单独看都"没问题"。
 
-### 跑完 01 之后要看的三个数字
+### 跑完 01 之后要看的四项校验
 
-1. **说话人数量**：DNS 文件名用 `stem.split('_')[0]` 切说话人 id。
-   如果打印出来的说话人数接近文件总数，说明切分规则不对，
-   划分会退化成按文件随机划分，**指标会虚高**，必须先修这个再往下走。
+1. **说话人数量**：DNS 文件名必须用 `reader_(\d+)` 提取说话人；notebook 有断言。
 2. **噪声平稳性两组的比例**：门限 9.0 dB 是在合成噪声上标定的，
    真实录音分布更连续。两组比例悬殊（比如 9:1）就该调门限，
    否则某一组样本太少，对照没有统计意义。
-3. **合成 RIR 的标称 vs 实测 RT60**：notebook 会打印对照。
-   偏差超过 ±25% 说明 `make_rir` 又出问题了（这个 bug 犯过一次，见 I-22）。
+3. **80个实验格是否齐全**：RT60 必须是独立分层字段，不能再折叠进 `synth`。
+4. **真实 RIR 是否落在匹配桶**：0.2/0.4/0.6/0.8秒分别与同档合成RIR比较。
 
 ---
 
@@ -154,7 +156,7 @@ QUICK_TEST = False        # True = 只下 WenetSpeech（约 520 MB）验证链�
 - **语料在 hybrid 模式下也不会白丢**：压缩包在 Drive 上，
   新会话重跑下载 cell 只会解压（几分钟），不会重新下载。
 
-急着看全流程能不能通：把 `QUICK_TEST` 设成 `True`，或者把 `EPOCHS` 改成 5 先跑一轮。
+急着看全流程能不能通：保持 `SMOKE_RUN=True`，它会自动使用 Nano、3 epoch 和小测试集。
 
 ### 训练时长怎么估
 
@@ -169,9 +171,9 @@ print(h[0]['epoch_seconds'], '秒/epoch  →', h[0]['epoch_seconds']*60/3600, '�
 
 **建议的推进节奏**：
 
-1. `QUICK_TEST=True` + `EPOCHS=3` —— 十几分钟，验证整条链路能通
-2. `QUICK_TEST=False` + `EPOCHS=5` —— 跑一轮真数据，确认 loss 在降、量出真实 epoch 时长
-3. `EPOCHS=60` —— 正式训练，断了就重跑，会自动续训
+1. `SMOKE_RUN=True` —— Nano 3 epoch，验证整条链路
+2. `SMOKE_RUN=False`，先把正式 `EPOCHS` 临时设为5 —— 确认新分布下 loss 与无害性
+3. 恢复60 epoch —— 正式训练，断了重跑会自动续训
 
 **先跑 `crn-nano`**（参数量只有 crn-lite 的 1/5）。它跑完就能拿到一套完整的
 端到端指标，把整个流程闭环；大模型再慢慢跑。
@@ -209,7 +211,7 @@ PyTorch流式 vs 整段     : 1.192e-06
 | `models/*.onnx` | `models/` |
 | `models/dnsmos/sig_bak_ovr.onnx` | `models/dnsmos/` |
 | `colab_metrics.json` | `results/` |
-| `testset.zip`（notebook 01 生成，单独下载） | 解压到 `data/`，使 `data/testset/index.json` 存在 |
+| `testsets_v1.zip`（notebook 01 生成） | 解压到 `data/`，得到 `data/testsets/*` |
 
 > `archives/` 里的几十 GB 压缩包**不用下载**，它们只在 Colab 上用。
 
@@ -221,11 +223,22 @@ notebook 03 的最后一个 cell 会把前三样打包成 `colab_outputs.zip`，
 uv run rtse-doctor
 ```
 
-「Colab 产物」一项应从告警变绿。然后跑完整评测（含 CER）：
+然后分三次跑评测，输出文件不要共用：
 
 ```bash
-uv run rtse-eval
+uv run rtse-eval data/testsets/dns_objective --skip-cer --out results/dns_objective.json
+uv run rtse-eval data/testsets/aishell_controlled --out results/aishell_controlled.json
+uv run rtse-eval data/testsets/wenetspeech_real --skip-objective --out results/wenetspeech_real.json
 ```
+
+正式报告再用更强的faster-whisper `medium`复核前三名方法，并写到**不同输出文件**：
+
+```bash
+uv run rtse-eval data/testsets/aishell_controlled --methods none,specsub,crn-nano --asr-model medium --out results/aishell_medium.json
+uv run rtse-eval data/testsets/wenetspeech_real --methods none,specsub,crn-nano --asr-model medium --skip-objective --out results/wenet_medium.json
+```
+
+评测器会把ASR规格与每格抽样数写进缓存；配置不一致时拒绝续跑，避免把small和medium混成一张表。
 
 Web 演示的方法下拉框里会自动出现神经模型（`models/*.onnx` 是自动扫描的）。
 
@@ -233,11 +246,11 @@ Web 演示的方法下拉框里会自动出现神经模型（`models/*.onnx` 是
 
 ## 6. 磁盘预算
 
-**Colab 侧**：语料压缩包约 20 GB，解压后 40~60 GB。
+**Colab 侧**：DNS压缩包约20 GB，另加两份中文 parquet 约0.62 GB；解压后约40~60 GB。
 Colab Pro 的本地盘有 200+ GB，够用。Drive 侧在 hybrid 模式下要放得下压缩包。
 
 **本地侧**：C: 盘紧张（见 [`ENVIRONMENT.md`](ENVIRONMENT.md)），所以：
 
-- **不要**把 DNS / WenetSpeech 原始数据下载到本地，它们只在 Colab 上用
-- 只下载 `testset.zip`（几百 MB）和模型（约 10 MB）
+- **不要**把 DNS / AISHELL / WenetSpeech 原始数据下载到本地，它们只在 Colab 上用
+- 只下载 `testsets_v1.zip` 和模型（约10 MB）
 - 空间不够的话把 `data/` 迁到别的盘，然后设 `RTSE_DATA_DIR` 环境变量

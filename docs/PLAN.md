@@ -1,4 +1,4 @@
-# 实时远场语音增强与 ASR 鲁棒性系统 —— 总体方案
+# 单通道实时语音降噪与中文 ASR 鲁棒性系统 —— V1 总体方案
 
 > 项目代号：**RTSE**（Real-Time Speech Enhancement）
 > 本机路径：`C:\Users\haku\Documents\trae_projects\VAD`
@@ -11,10 +11,19 @@
 做出一条**可实时运行、可量化、可演示**的语音前端链路：
 
 ```
-麦克风 → VAD → 去混响 → 降噪（DSP 基线 vs 神经网络）→ [可选波束形成] → ASR → 实时字幕
+麦克风 → VAD（分段/显示）→ 去噪（DSP 基线 vs 神经网络）→ 中文 ASR → 实时字幕
 ```
 
-并用一份完整的指标矩阵回答一个业务问题：**语音增强到底让 ASR 的字错率降低了多少，代价是多少 ms 延迟和多少 CPU。**
+并用职责分离的三套测试集回答一个业务问题：**去噪到底让中文 ASR 的字错率降低了多少，代价是多少 ms 延迟和多少 CPU。**
+
+### V1 边界（2026-08-18 方向校正）
+
+- 当前模型只做**加性噪声抑制**；RIR 是环境扰动，参考目标允许保留混响。
+- V1 不宣称去混响、波束形成或端到端 ASR 联合训练。
+- VAD 默认不门控音频，主要负责 ASR 分段与可视化；门控效果必须另做消融才能宣称收益。
+- 去混响属于后续独立里程碑，不能用“加了 RIR 数据”替代算法与评测证据。
+
+数据集的精确定义与结论权限见 [`DATASETS_V1.md`](DATASETS_V1.md)。
 
 ---
 
@@ -24,7 +33,7 @@
 
 | 阶段 | 在哪里 | 理由 |
 |---|---|---|
-| 数据下载（DNS / RIR / MUSAN / AISHELL） | **Colab** | 本地 C: 仅 18 GB 可用 |
+| 数据下载（DNS / RIR / AISHELL / WenetSpeech） | **Colab** | 大文件留在云端 |
 | 数据合成（加噪 + 卷混响 + 分段） | **Colab** | 紧挨数据，避免来回传输 |
 | 模型训练 | **Colab** | 用户指定；同时规避本地磁盘瓶颈 |
 | ONNX 导出 | **Colab**（训练完顺手导出） | 产物只有几 MB |
@@ -39,7 +48,7 @@
 
 1. **代码**：`src/rtse/` 整个包 → Colab（一条 `pip install -e` 或直接 clone）
 2. **模型**：Colab → 本地，`.onnx` + `.pt`，单个 < 20 MB
-3. **测试集**：Colab 合成后打包 → 本地，目标 **< 2 GB**（含干净参考、带噪输入、转写文本）
+3. **测试集**：Colab 生成三套职责分离的小集 → 本地，目标合计 **< 2 GB**
 
 > 三样东西的传输方式：Google Drive。详见 `COLAB_GUIDE.md`。
 
@@ -63,8 +72,6 @@ VAD/
 │   ├── audio/                   读写、重采样、分帧、STFT/iSTFT（含完美重构校验）
 │   ├── vad/                     能量VAD / 谱平坦度VAD / Silero-ONNX
 │   ├── dsp/                     谱减法、维纳滤波、MMSE-LSA、噪声估计(MCRA)
-│   ├── dereverb/                单通道 WPE
-│   ├── beamform/                延迟求和 / MVDR / GEV（Phase 8）
 │   ├── models/                  CRN-Lite 流式增强网络（PyTorch，本地与 Colab 共用）
 │   ├── data/                    混音合成、清单(manifest)、Dataset
 │   ├── train/                   训练循环、损失函数、ONNX 导出（Colab 调用）
@@ -121,10 +128,11 @@ VAD/
 
 > 失败案例分析里必须包含：谱减法在非平稳噪声下的音乐噪声频谱图对比。
 
-### 3.4 去混响
+### 3.4 混响在 V1 中的角色
 
-**单通道 WPE**（加权预测误差），迭代式，帧级因果近似版本用于流式。
-远场是本项目的关键词，只做降噪不做去混响，"远场"就名不副实。
+RIR 只用于构造混响环境和检验去噪鲁棒性。训练参考是混响后的无噪语音，
+因此 V1 不会因为“没有去掉混响”被扣分，也不能宣称具备去混响能力。
+真实去混响需另设干信号目标、算法基线和 RT60/DRR 指标，推迟到 V2。
 
 ### 3.5 降噪：神经网络
 
@@ -147,11 +155,8 @@ VAD/
 2. 多分辨率 STFT 幅度损失
 3. 时域 SI-SDR
 
-**对比模型**：
-- 更小：`CRN-Nano`（< 100 K 参数），用来占据"极低算力"那一档
-- 更大：`DPCRN`（双路径 RNN，intra-freq + inter-time），用来占据"高性能"那一档
-
-三档模型 + 三个 DSP 基线 = 六条曲线，指标表才有说服力。
+**对比模型**：`CRN-Nano`（极低算力）与 `CRN-Lite`（质量优先）两档，
+加三个DSP基线。V1先确保每个点都有可信质量和CER证据，不再为凑曲线扩展未验证模型。
 
 ### 3.6 ONNX 流式导出
 
@@ -166,8 +171,8 @@ VAD/
 ### 3.7 ASR
 
 - **引擎**：faster-whisper（CTranslate2 后端，CPU int8 可跑，GPU 可选）
-- **中文**：主战场。测试集 AISHELL-1 test（约 1.2 GB，7176 条，开放下载）
-- **英文**：LibriSpeech test-clean 子集，作为跨语言佐证
+- **中文受控集**：AISHELL-1 test，叠加留出 DNS 噪声和 RT60 匹配 RIR
+- **中文真实集**：WenetSpeech `test_meeting` 原始录音，只测输入/增强 CER
 - **CER 计算**：中文按字符级。文本归一化必须做全：
   全角半角、标点剥离、中文数字↔阿拉伯数字、英文大小写、空格处理。
   归一化不做干净，CER 数字就是噪声。
@@ -185,15 +190,15 @@ VAD/
 | 对比 | 传统 DSP vs 神经模型，逐格对比 |
 | 失败案例 | 至少 5 个，带频谱图与成因分析 |
 
-**评测矩阵设计**：
+**受控评测矩阵设计**：
 
 - SNR：`{-5, 0, 5, 10, 15, 20}` dB
 - 噪声类型：`{babble, cafeteria, car, keyboard, music, white, street}`
-- 混响：`{anechoic, T60≈0.3s, T60≈0.6s, T60≈0.9s}`
-- 方法：`{noisy, specsub, wiener, mmse-lsa, wpe+wiener, crn-nano, crn-lite, dpcrn, crn-lite+wpe}`
+- 混响：`{T60≈0.2s, 0.4s, 0.6s, 0.8s} × {合成, 真实匹配}`
+- 方法：`{noisy, specsub, wiener, mmse-lsa, crn-nano, crn-lite}`
 
-完整笛卡尔积 = 6×7×4×9 = 1512 格。**不全跑**：
-主表跑 SNR × 方法（固定噪声混合、T60=0.3），副表各自单变量扫描。
+噪声/RIR分层 = 5 SNR × 2 平稳性 × 2 RIR来源 × 4 RT60 = **80格**，
+另加1个clean→clean无害性格。冒烟版每套81条，正式版405条。
 
 ### 3.9 Web 可视化
 
@@ -210,7 +215,7 @@ VAD/
 - 可视化：上下双频谱图（带噪 / 增强，实时滚动）、VAD 门控时间轴、输入输出电平表
 - 实时数码管：RTF、单帧延迟 p95、端到端延迟、当前 SNR 估计
 - 实时字幕区（ASR 结果流式追加）
-- 开关面板：VAD 类型 / 去混响开关 / 降噪方法（DSP vs 各神经模型）**热切换**，
+- 开关面板：VAD 类型 / VAD 门控 / 降噪方法（DSP vs 各神经模型）**热切换**，
   切换时字幕与频谱同屏对比
 
 **② A/B 文件实验台** `/lab`
@@ -243,21 +248,23 @@ VAD/
 - [ ] STFT/iSTFT 完美重构（测试通过）
 - [ ] 三种 VAD
 - [ ] 谱减 / 维纳 / MMSE-LSA / MCRA 噪声估计
-- [ ] 单通道 WPE
+- [ ] VAD 分段对 CER 的消融（门控默认关闭）
 - [ ] 指标模块（SI-SDR / STOI / PESQ）
 - [ ] 本地合成小样本（自制噪声）验证管线端到端跑通
 - **验收**：`uv run rtse-enhance --method wiener in.wav out.wav` 出声且 SI-SDR 提升为正
 
 ### Phase 3 — 数据配方 ☁️Colab
-> **2026-08-07 数据集定稿**（此前基于 THCHS-30 + MUSAN 的两版已废弃并删除）。
+> **2026-08-18 V1 数据职责重新定稿**（此前单一 WenetSpeech 混合测试集保留为历史诊断）。
 > 完整设计与理由见 [`notebooks/README.md`](../notebooks/README.md)。
 - [x] `notebooks/01_data_prep.ipynb`（已写，**尚未在 Colab 实跑**）
 - [x] 训练语音：DNS Challenge 4 `read_speech` 1 分片（≈21 小时，独立可解压）
 - [x] 噪声：DNS `noise_fullband`（AudioSet + Freesound），**按平稳性自动分两组**
       （`rtse.dsp.stationarity`，DNS 不带这个标注，从信号本身算）
 - [x] RIR：DNS 真实 IR + 本项目合成（镜像源法），测试集里**并行分层**
-- [x] 中文 ASR 评测：WenetSpeech `test_meeting`（HF 镜像，无需填表）
-- [x] 测试集分层：SNR{−5,0,5,10,15} × 噪声{稳态,非稳态} × RIR{合成 4 档 RT60, 真实}
+- [x] 客观质量：DNS5 留出语音，具备有效无噪参考
+- [x] 受控中文 CER：AISHELL-1 test + DNS 留出噪声 + RT60 匹配 RIR
+- [x] 真实中文 CER：WenetSpeech `test_meeting` 原始录音，不二次加噪/混响
+- [x] 测试集分层：SNR{−5,0,5,10,15} × 噪声{稳态,非稳态} × RIR来源{合成,真实} × RT60{0.2,0.4,0.6,0.8}
 - **验收**：本地能下载并加载测试集，`uv run rtse-eval` 跑通
 
 ### Phase 4 — 模型与训练 ☁️Colab

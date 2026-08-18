@@ -36,16 +36,15 @@ def _cmd_transcribe(args: argparse.Namespace) -> int:
 def _cmd_eval(args: argparse.Namespace) -> int:
     """对一个测试集（`index.json` + 音频）批量转写，输出增强前后的 CER 对比。
 
-    测试集里每条记录同时有 `noisy` 和 `clean` 两条音频路径——这里既算
-    "带噪直接识别"也算"干净参考识别"的 CER，前者衡量降噪前的下游影响，
-    后者是 ASR 在这批语料上的能力上界（见 docs/METRICS.md 关于 clean 上界行
-    的说明：没有它就不知道"CER 降到多少算好"）。
+    每条记录必须有 `noisy`（待处理输入），`clean` 是可选字段。只有测试集显式
+    声明 `cer_upper_is_meaningful=true` 时才转写 clean 参考；真实会议录音本身含噪，
+    不能伪装成“干净上界”。
 
     如果传了 `--enhanced-dir`，会额外读取该目录下同名文件（增强后的音频）
     算第三组 CER，三组放在一起才能回答"降噪到底让 ASR 好了多少"这个问题。
     """
-    from rtse.asr.whisper_engine import WhisperASR
     from rtse.asr.scoring import cer
+    from rtse.asr.whisper_engine import WhisperASR
     from rtse.audio.io import read_audio
 
     idx = json.loads(Path(args.index).read_text(encoding="utf-8"))
@@ -63,7 +62,12 @@ def _cmd_eval(args: argparse.Namespace) -> int:
     rows = []
     for i, r in enumerate(records):
         row = {"id": r["id"]}
-        for tag, key in [("clean", "clean"), ("noisy", "noisy")]:
+        sources = [("input", "noisy")]
+        if idx.get("cer_upper_is_meaningful", idx.get("reference_is_clean", True)):
+            if "clean" not in r:
+                raise ValueError("数据集声明存在 clean CER 上界，但记录缺少 clean 字段")
+            sources.insert(0, ("clean", "clean"))
+        for tag, key in sources:
             audio = read_audio(root / r[key])
             text = engine.transcribe(audio).text
             row[f"{tag}_cer"] = cer(r["text"], text)
@@ -79,7 +83,7 @@ def _cmd_eval(args: argparse.Namespace) -> int:
     console.print()
     import statistics as st
 
-    for key in ["clean_cer", "noisy_cer", "enhanced_cer"]:
+    for key in ["clean_cer", "input_cer", "enhanced_cer"]:
         vals = [r[key] for r in rows if key in r]
         if vals:
             console.print(f"{key:<14} 均值 CER = {st.mean(vals):.3f}  (n={len(vals)})")

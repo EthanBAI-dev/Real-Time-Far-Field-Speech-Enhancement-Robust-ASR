@@ -1,4 +1,4 @@
-"""RTSE — 实时远场语音增强与 ASR 鲁棒性系统。"""
+"""RTSE — 单通道实时语音降噪与中文 ASR 鲁棒性系统。"""
 
 __version__ = "0.1.0"
 
@@ -9,4 +9,4 @@ N_FFT = 512        # 32 ms 分析窗
 HOP_LENGTH = 256   # 16 ms 帧移，50% 重叠
 N_FREQ = N_FFT // 2 + 1  # 257
 
-__all__ = ["SAMPLE_RATE", "N_FFT", "HOP_LENGTH", "N_FREQ", "__version__"]
+__all__ = ["HOP_LENGTH", "N_FFT", "N_FREQ", "SAMPLE_RATE", "__version__"]

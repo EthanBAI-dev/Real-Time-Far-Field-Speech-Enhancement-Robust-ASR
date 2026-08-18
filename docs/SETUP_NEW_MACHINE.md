@@ -60,10 +60,11 @@ uv run rtse-doctor
 
 ### 4.1 测试集（要算指标才需要）
 
-从 Google Drive 下载 `testset.zip`（`MyDrive/Audio AI/RTSE/` 下，是 notebook 01 的产物），
-解压到项目根的 `data/`，使 `data/testset/index.json` 存在。
+从 Google Drive 下载 `testsets_v1.zip`（notebook 01 的产物），解压到项目根的
+`data/`，得到 `data/testsets/dns_objective`、`aishell_controlled` 和
+`wenetspeech_real` 三个目录。
 
-拿到后先看一眼 `index.json`：每条记录都带 `rt60_nominal`（标称）和
+两套受控集的 `index.json` 每条记录都带 `rt60_bucket` 和
 `rt60_measured`（Schroeder 反向积分实测）。**两者应当接近**——踩过一次坑
 （I-22：标称 0.9 s 实测只有 0.63 s），此后一律以实测为准。
 
@@ -105,7 +106,9 @@ uv run rtse-asr transcribe data/demo/chinese_news.wav
 有测试集之后：
 
 ```bash
-uv run rtse-eval --cer-per-cell 2
+uv run rtse-eval data/testsets/dns_objective --skip-cer --out results/dns_objective.json
+uv run rtse-eval data/testsets/aishell_controlled --out results/aishell_controlled.json
+uv run rtse-eval data/testsets/wenetspeech_real --skip-objective --out results/wenetspeech_real.json
 ```
 
 ---
@@ -133,12 +136,8 @@ uv run python scripts/pack_for_colab.py
 看 [`PROGRESS.md`](PROGRESS.md)（已完成）和 [`ISSUES.md`](ISSUES.md)（问题与修复记录）。
 接手时最该知道的三件事：
 
-1. **数据集刚换过（2026-08-07），新流水线还没在 Colab 上实跑过。**
-   现在是 DNS Challenge 英文训练 + WenetSpeech 中文评测（跨语种泛化论证）。
-   之前基于 THCHS-30 + MUSAN 的两版已废弃删除，连带**所有旧指标和实验发现都已清空**——
-   `METRICS.md` 的主表和 `FINDINGS.md` 的 F-01~F-08 都是待重测状态。
-   旧内容在 git 历史里（`git show ad69d0b:docs/FINDINGS.md`）。
-2. **仓库里的 ONNX 模型是旧数据训出来的**，可以用来跑通链路和 Web 演示，
-   但**不是新数据集的结果**，正式指标要等重新训练。
-3. **跑完 01 要盯三个数字**（说话人数量是否合理、噪声平稳性两组比例、
-   合成 RIR 标称 vs 实测 RT60）——具体见 [`COLAB_GUIDE.md`](COLAB_GUIDE.md) 第 2 节。
+1. **V1 已拆成三套评测**：DNS客观质量、AISHELL受控中文CER、WenetSpeech真实会议CER。
+2. **现有 ONNX 是修复训练分布之前的诊断基线**，可跑通链路，但存在干净输入过抑制；
+   正式结果要用新的高SNR+恒等样本配方重训。
+3. **先保持 `SMOKE_RUN=True`**，确认80格受控矩阵+1格无害性、真实RIR匹配桶、训练和导出全部通过，
+   再切正式规模。具体见 [`COLAB_GUIDE.md`](COLAB_GUIDE.md)。

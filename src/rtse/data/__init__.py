@@ -4,6 +4,7 @@
 必须两边**完全一致**，否则本地评测的"0 dB"和 Colab 训练的"0 dB"不是同一件事。
 """
 
+from rtse.data.benchmarks import BenchmarkSource
 from rtse.data.synth import (
     NOISE_KINDS,
     apply_rir,
@@ -15,9 +16,10 @@ from rtse.data.synth import (
 
 __all__ = [
     "NOISE_KINDS",
+    "BenchmarkSource",
+    "apply_rir",
     "make_noise",
     "make_rir",
     "mix_at_snr",
-    "apply_rir",
     "speech_active_mask",
 ]

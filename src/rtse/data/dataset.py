@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -45,15 +45,14 @@ class MixConfig:
     提到 35 dB 之后，25~35 dB 那一段实际已接近无噪，模型能学到
     "输入越干净、动手越轻"这个连续的强度调节，而不只是二值的开关。"""
     reverb_prob: float = 0.5
-    """施加混响的概率。不是 100% —— 训练集里必须保留一部分近场干净样本，
-    否则模型会把"去混响"当成无条件要做的事，在本来就没混响的输入上产生过处理。"""
+    """施加混响的概率。V1目标保留混响，只训练去噪；同时覆盖有/无混响，
+    是为了让去噪器适应两类声学环境，不代表模型学习去混响。"""
     noise_prob: float = 0.90
     """不加噪的样本比例（1 - noise_prob）。这些是 **target == input 的恒等样本**，
     直接教模型"输入已经干净时应当放手"。
 
     原来是 0.98（只有 2% 恒等样本），太少，学不动。提到 0.90 后有 10%。
-    这和 ``reverb_prob=0.5`` 是**同一个道理**：无害性必须被显式训练，
-    不能假设它会自动成立。当初混响这一维想到了，噪声这一维漏了。"""
+    无害性必须被显式训练，不能假设它会自动成立。"""
     sample_rate: int = SAMPLE_RATE
 
 
