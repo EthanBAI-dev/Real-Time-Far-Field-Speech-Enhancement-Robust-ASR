@@ -18,11 +18,11 @@ from rtse import SAMPLE_RATE
 
 __all__ = [
     "NOISE_KINDS",
+    "apply_rir",
     "make_noise",
     "make_rir",
     "mix_at_snr",
     "speech_active_mask",
-    "apply_rir",
 ]
 
 NOISE_KINDS = ("white", "pink", "brown", "babble", "car", "keyboard", "hum", "cafeteria")
@@ -259,8 +259,18 @@ def mix_at_snr(
         start = int(rng.integers(0, noise.size - speech.size + 1))
         noise = noise[start : start + speech.size]
 
-    mask = speech_active_mask(speech) if active_only else np.ones(speech.size, dtype=bool)
-    p_speech = float(np.mean(speech[mask] ** 2)) if mask.any() else float(np.mean(speech**2))
+    # DNS 等真实噪声片段偶尔带明显的 DC 偏置。直流不是我们要控制的声学噪声，
+    # 若把它计入缩放功率、却在事后校验时去均值，会让名义 SNR 与实测 SNR
+    # 相差数 dB（I-32）。语音只在功率估计时去 DC，输出本身不改；噪声则在
+    # 混入前直接去 DC，保证混音与校验使用完全相同的定义。
+    speech_ac = speech - np.mean(speech)
+    noise = noise - np.mean(noise)
+    mask = speech_active_mask(speech_ac) if active_only else np.ones(speech.size, dtype=bool)
+    p_speech = (
+        float(np.mean(speech_ac[mask] ** 2))
+        if mask.any()
+        else float(np.mean(speech_ac**2))
+    )
     p_noise = float(np.mean(noise**2))
     if p_noise <= 0 or p_speech <= 0:
         return speech.copy(), np.zeros_like(speech)

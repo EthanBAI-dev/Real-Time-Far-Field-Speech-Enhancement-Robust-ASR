@@ -52,6 +52,23 @@ def test_mix_at_snr_is_accurate():
         assert np.allclose(mixed, speech_sig + scaled_noise)
 
 
+def test_mix_at_snr_removes_noise_dc_before_scaling():
+    """真实噪声带 DC 偏置时，目标和实测 SNR 仍必须一致（I-32）。"""
+    rng = np.random.default_rng(32)
+    speech_sig = rng.standard_normal(SR * 2) * 0.2
+    noise = rng.standard_normal(SR * 2) * 0.05 + 0.4
+    mixed, scaled_noise = mix_at_snr(speech_sig, noise, 5.0, rng=rng)
+
+    signal = speech_sig - speech_sig.mean()
+    mask = speech_active_mask(signal)
+    actual = 10 * np.log10(
+        np.mean(signal[mask] ** 2) / np.mean((scaled_noise - scaled_noise.mean()) ** 2)
+    )
+    assert abs(actual - 5.0) < 1e-6
+    assert abs(float(scaled_noise.mean())) < 1e-12
+    assert np.allclose(mixed, speech_sig + scaled_noise)
+
+
 @pytest.mark.parametrize("kind", ["white", "pink", "brown", "babble", "car", "keyboard", "hum"])
 def test_noise_kinds_are_finite_and_unit_variance(kind):
     y = make_noise(kind, SR, RNG)

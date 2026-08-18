@@ -277,12 +277,23 @@ print(f'WenetSpeech 真实 CER: {len(wenet_index["records"])} 条 → {WENET_REA
 这里不再用 VAD 猜“音频是否被截断”。源语音只按时长筛选、从不裁剪；验证重点是：
 
 1. 受控集确实有80个噪声/RIR格 + 1个identity格，RT60没有再被折叠；
-2. 标称与实测 SNR 对齐；
+2. 标称、内存实测和写盘后 SNR 对齐；
 3. 真实 RIR 的实测 RT60 落在对应桶内；
 4. WenetSpeech 没有 `clean` 字段、没有二次 SNR/RIR 字段。
 """)
     _set(nb, 17, "code", r"""
 import collections, statistics as st
+from rtse.audio.io import read_audio
+from rtse.data.synth import speech_active_mask
+
+def measured_disk_snr(root, record):
+    target = read_audio(Path(root, record['clean']))
+    noisy = read_audio(Path(root, record['noisy']))
+    signal = target - target.mean()
+    noise = noisy - target
+    noise = noise - noise.mean()
+    mask = speech_active_mask(signal)
+    return 10 * np.log10(np.mean(signal[mask] ** 2) / np.mean(noise ** 2))
 
 def validate_controlled(path, expected_purpose):
     idx = json.loads(Path(path, 'index.json').read_text(encoding='utf-8'))
@@ -298,12 +309,20 @@ def validate_controlled(path, expected_purpose):
     assert len(identity) == PER_CELL and all(r['noisy'].endswith('_input.wav') for r in identity)
     worst_snr = max(abs(r['snr_measured'] - r['snr']) for r in mixed)
     assert worst_snr < 1.0, f'SNR 最大偏差 {worst_snr:.2f} dB'
+    # 分层抽查写盘后的成对 WAV，锁定“输入/目标被独立归一化”这类隐蔽错误。
+    stride = max(1, len(mixed) // 40)
+    disk_probe = mixed[::stride][:40]
+    worst_disk_snr = max(abs(measured_disk_snr(path, r) - r['snr']) for r in disk_probe)
+    assert worst_disk_snr < 0.25, f'写盘后 SNR 最大偏差 {worst_disk_snr:.2f} dB'
     ranges = {t: (lo, hi) for t, lo, hi in RT60_BINS}
     for r in recs:
         if r['rir_kind'] == 'real':
             lo, hi = ranges[r['rt60_bucket']]
             assert lo <= r['rt60_measured'] < hi
-    print(f'✓ {idx["dataset_id"]}: {len(recs)} 条 / 81格，SNR最大偏差 {worst_snr:.2f} dB')
+    print(
+        f'✓ {idx["dataset_id"]}: {len(recs)} 条 / 81格，'
+        f'内存SNR最大偏差 {worst_snr:.2f} dB，写盘抽查 {worst_disk_snr:.2f} dB'
+    )
 
 if not QUICK_TEST:
     validate_controlled(DNS_QUALITY_DIR, 'objective_audio_quality')

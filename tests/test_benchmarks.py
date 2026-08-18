@@ -4,12 +4,13 @@ import json
 
 import numpy as np
 
-from rtse.audio.io import write_audio
+from rtse.audio.io import read_audio, write_audio
 from rtse.data.benchmarks import (
     BenchmarkSource,
     generate_controlled_benchmark,
     generate_real_cer_benchmark,
 )
+from rtse.data.synth import speech_active_mask
 
 
 def _tone(seconds=1.2, freq=220.0):
@@ -20,7 +21,9 @@ def _tone(seconds=1.2, freq=220.0):
 def test_controlled_schema_keeps_rt60_and_task_boundaries(tmp_path):
     noise = tmp_path / "noise.wav"
     rir = tmp_path / "rir.wav"
-    write_audio(noise, np.random.default_rng(0).normal(0, 0.05, 16000 * 2))
+    # 故意加入很大的 DC 偏置，复现 I-32：旧实现的名义/实测 SNR 会偏数 dB。
+    biased_noise = np.random.default_rng(0).normal(0, 0.05, 16000 * 2) + 0.4
+    write_audio(noise, biased_noise)
     impulse = np.zeros(8000)
     impulse[0] = 1.0
     impulse[100] = 0.2
@@ -49,6 +52,17 @@ def test_controlled_schema_keeps_rt60_and_task_boundaries(tmp_path):
     assert {r["rir_kind"] for r in idx["records"]} == {"synth", "real", "none"}
     identity = [r for r in idx["records"] if r["noise_kind"] == "none"]
     assert len(identity) == 1 and identity[0]["snr"] == "clean"
+    for record in mixed:
+        assert abs(record["snr_measured"] - record["snr"]) < 0.05
+        target = read_audio(tmp_path / "controlled" / record["clean"])
+        noisy = read_audio(tmp_path / "controlled" / record["noisy"])
+        residual = noisy - target
+        signal = target - target.mean()
+        noise_ac = residual - residual.mean()
+        mask = speech_active_mask(signal)
+        # 写盘后的输入/目标必须仍保持同一个 SNR，不能各自归一化。
+        actual = 10 * np.log10(np.mean(signal[mask] ** 2) / np.mean(noise_ac**2))
+        assert abs(actual - record["snr"]) < 0.15
 
 
 def test_real_cer_set_has_no_fake_clean_upper(tmp_path):

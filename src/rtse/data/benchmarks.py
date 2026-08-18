@@ -136,6 +136,21 @@ def _measured_snr(clean: np.ndarray, scaled_noise: np.ndarray) -> float:
     return float(10.0 * np.log10(ps / pn))
 
 
+def _write_aligned_pair(
+    input_path: Path,
+    target_path: Path,
+    noisy: np.ndarray,
+    target: np.ndarray,
+) -> float:
+    """用同一增益写入输入/目标，避免独立削波保护破坏配对关系。"""
+
+    peak = max(float(np.max(np.abs(noisy))), float(np.max(np.abs(target))))
+    gain = min(1.0, 0.99 / peak) if peak > 0 else 1.0
+    write_audio(input_path, noisy * gain, guard_clipping=False)
+    write_audio(target_path, target * gain, guard_clipping=False)
+    return gain
+
+
 def generate_controlled_benchmark(
     sources: Sequence[BenchmarkSource],
     noise_by_kind: Mapping[str, Sequence[str | Path]],
@@ -195,13 +210,23 @@ def generate_controlled_benchmark(
                 rir_path, measured_rt60 = pool[int(rng.integers(len(pool)))]
                 rir = read_audio(rir_path)
             wet = apply_rir(dry, rir)
+            # RIR 的绝对增益没有统一物理含义；先把去噪目标统一到安全峰值，
+            # 再按 SNR 加噪。后续若仍需防削波，输入和目标必须共用同一个增益。
+            wet_peak = float(np.max(np.abs(wet)))
+            if wet_peak <= 1e-9:
+                raise ValueError(f"源语音 {source.source_id!r} 与 RIR 卷积后近似静音")
+            wet = wet / wet_peak * 0.7
             noise = _take_noise(noise_by_kind[noise_kind], wet.size, rng)
             noisy, scaled_noise = mix_at_snr(wet, noise, snr, rng=rng)
             measured_snr = _measured_snr(wet, scaled_noise)
 
             stem = f"{len(records):05d}_{noise_kind}_snr{snr}_{rir_kind}_rt{target_rt60:.1f}"
-            write_audio(audio_dir / f"{stem}_input.wav", noisy)
-            write_audio(audio_dir / f"{stem}_target.wav", wet)
+            storage_gain = _write_aligned_pair(
+                audio_dir / f"{stem}_input.wav",
+                audio_dir / f"{stem}_target.wav",
+                noisy,
+                wet,
+            )
             record = {
                 "id": stem,
                 "source_id": source.source_id,
@@ -210,6 +235,7 @@ def generate_controlled_benchmark(
                 "duration_s": round(wet.size / SAMPLE_RATE, 3),
                 "snr": snr,
                 "snr_measured": round(measured_snr, 2),
+                "storage_gain": round(storage_gain, 8),
                 "noise_kind": noise_kind,
                 "rir_kind": rir_kind,
                 "rt60_bucket": target_rt60,
