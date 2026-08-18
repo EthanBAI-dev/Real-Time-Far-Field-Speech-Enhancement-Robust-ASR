@@ -1,0 +1,6 @@
+{
+ "crn-nano": {
+  "clean_passthrough_si_sdr": 8.181320230074324,
+  "noisy_delta_si_sdr": -0.8903167551640152
+ }
+}

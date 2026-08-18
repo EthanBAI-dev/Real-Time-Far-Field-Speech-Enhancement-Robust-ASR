@@ -56,3 +56,14 @@ colab_outputs.zip
 # Colab 回传的数据包（几百 MB，解压后进 data/ 与 models/，包本身不入库）
 testset.zip
 output-*.zip
+# 同理：notebook 03 产出的统一回传包（64 MB，内容已分流到 data/ models/ results/）
+rtse_handoff.zip
+
+# 外部参考项目：用户自行下载的第三方仓库（speech-processing 等），154 MB，
+# 只作本地阅读与对照实验的素材，**不是本项目的代码**，不入库也不分发。
+# scripts/compare_vad_backends.py 会用到它里面的语音样本，本地没有时自动跳过。
+/ref/
+
+# 数据清单：manifest.json 是几万条文件路径的清单（9 MB），随数据集重新生成，
+# 属于中间产物而不是结论。评测结论类 json 仍然入库（见上面的 results 规则）。
+results/manifest.json
