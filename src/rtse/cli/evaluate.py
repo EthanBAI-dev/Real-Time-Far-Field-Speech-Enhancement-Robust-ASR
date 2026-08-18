@@ -80,10 +80,16 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("testset", nargs="?", default="data/testset", help="测试集目录，默认 data/testset")
     p.add_argument("--models", default="models", help="ONNX 模型目录，默认 models/")
-    p.add_argument("--methods", default="none,specsub,wiener,mmse-lsa,crn-nano,crn-lite,crn-large")
+    p.add_argument("--methods", default=None,
+                   help="逗号分隔。默认 = none + 三种 DSP + **--models 目录下实际存在的**"
+                        " *.onnx。不写死清单：硬编码的模型名和磁盘内容一旦不一致，"
+                        "评测会在跑到那个方法时才崩（和 I-29 同类问题）")
     p.add_argument("--out", default="results/local_metrics.json")
     p.add_argument("--limit", type=int, help="只跑前 N 条（调试用）")
     p.add_argument("--skip-cer", action="store_true", help="跳过 CER（只算客观指标，快很多）")
+    p.add_argument("--skip-objective", action="store_true",
+                   help="跳过有参考指标（SI-SDR/STOI/ESTOI）。测试集在 index.json 里"
+                        "声明 reference_is_clean=false 时会自动跳过，无需手动指定")
     p.add_argument("--cer-per-cell", type=int, default=2,
                    help="CER 分层抽样：每个实验格取几条，默认 2（39 格 → 78 条）")
     p.add_argument("--asr-model", default="small", help="faster-whisper 规格，默认 small")
@@ -97,7 +103,21 @@ def main() -> int:
     records = idx["records"]
     if args.limit:
         records = records[: args.limit]
-    methods = [m.strip() for m in args.methods.split(",") if m.strip()]
+    if args.methods:
+        methods = [m.strip() for m in args.methods.split(",") if m.strip()]
+    else:
+        # 自动发现：只扫顶层 *.onnx。子目录（如 models/_stale_v1/、models/dnsmos/）
+        # 刻意不扫 —— 那是放"不该参与本轮对比"的东西的地方。
+        found = sorted(q.stem for q in model_dir.glob("*.onnx"))
+        methods = ["none", *METHODS_DSP, *found]
+        console.print(f"[dim]未指定 --methods，自动发现：{found or '（无 ONNX 模型）'}[/dim]")
+
+    missing = [m for m in methods
+               if m not in ("none",) + METHODS_DSP and not (model_dir / f"{m}.onnx").exists()]
+    if missing:
+        console.print(f"[red]找不到模型：{missing}[/red]")
+        console.print(f"{model_dir}/ 下现有：{sorted(q.stem for q in model_dir.glob('*.onnx'))}")
+        return 1
 
     from rtse.metrics.intrusive import estoi, seg_snr, si_sdr, stoi
     from rtse.runtime import Pipeline
@@ -129,9 +149,22 @@ def main() -> int:
                        ensure_ascii=False), encoding="utf-8")
 
     # ── 1. 客观指标（全量）────────────────────────────────────────────────
+    # 有参考指标**要求参考信号本身是干净的**。参考若含噪，增强器把那些噪声去掉
+    # 反而会偏离参考、被判低分——数值不是"效果差"而是**无意义**。
+    # 让数据自己声明这一点（index.json 的 reference_is_clean），
+    # 而不是靠使用者记得某份数据集有这个限制（见 docs/ISSUES.md I-30）。
+    ref_clean = idx.get("reference_is_clean", True)
+    skip_obj = args.skip_objective or not ref_clean
+    if skip_obj and not args.skip_objective:
+        console.print("[yellow]测试集声明 reference_is_clean=false，跳过有参考指标。[/yellow]")
+        if idx.get("reference_note"):
+            console.print(f"[dim]  {idx['reference_note']}[/dim]")
+
     t0 = time.time()
     done_obj = {r["method"] for r in rows}
     for mi, method in enumerate(methods):
+        if skip_obj:
+            break
         if method in done_obj:
             console.print(f"  [{mi + 1}/{len(methods)}] {method:<10} 已完成，跳过")
             continue
@@ -159,7 +192,8 @@ def main() -> int:
                               f"{i + 1}/{len(records)}  ({el / 60:.1f} 分钟)", end="\r")
         save()  # 每个方法跑完立刻落盘
     console.print()
-    console.print(f"客观指标完成，用时 {(time.time() - t0) / 60:.1f} 分钟")
+    if not skip_obj:
+        console.print(f"客观指标完成，用时 {(time.time() - t0) / 60:.1f} 分钟")
 
     # ── 2. CER（分层抽样）─────────────────────────────────────────────────
     # cer_rows 不重新清空——续跑时它已经从 --out 缓存里加载了上次的结果，
@@ -223,9 +257,13 @@ def main() -> int:
         g = [r for r in rows if r["method"] == m]
         c = cer_by.get(m)
         cer_s = f"{st.mean(c):.3f}" if c else "—"
-        console.print(f"{m:<14}{st.mean(r['si_sdr'] for r in g):>9.2f}"
-                      f"{st.mean(r['stoi'] for r in g):>8.3f}"
-                      f"{st.mean(r['estoi'] for r in g):>8.3f}{cer_s:>8}")
+        if g:
+            obj = (f"{st.mean(r['si_sdr'] for r in g):>9.2f}"
+                   f"{st.mean(r['stoi'] for r in g):>8.3f}"
+                   f"{st.mean(r['estoi'] for r in g):>8.3f}")
+        else:
+            obj = f"{'n/a':>9}{'n/a':>8}{'n/a':>8}"
+        console.print(f"{m:<14}{obj}{cer_s:>8}")
     console.print(f"\n明细已写入 {out_path}")
     return 0
 
