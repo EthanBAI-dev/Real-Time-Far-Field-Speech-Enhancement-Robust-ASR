@@ -1,5 +1,7 @@
 """DSP 增强器、VAD、管线的测试。"""
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -337,7 +339,7 @@ def test_vad_detects_speech_and_silence(speech, name):
     assert silence_rate < 0.35, f"{name} 静音段误触发率达 {silence_rate:.2f}"
 
 
-@pytest.mark.parametrize("name", ["energy", "webrtc"])
+@pytest.mark.parametrize("name", ["energy", "webrtc", "silero"])
 def test_vad_all_silence_gives_no_speech(name):
     assert not build_vad(name).process_signal(np.zeros(SR * 2)).any()
 
@@ -355,6 +357,59 @@ def test_webrtc_vad_does_not_overflow_on_loud_input():
     vad = build_vad("webrtc")
     for _ in range(20):
         vad.process(np.ones(DEFAULT_CONFIG.hop) * 3.0)  # 不抛异常即通过
+
+
+def test_silero_vad_requires_hop_to_divide_its_fixed_chunk():
+    """Silero 只接受固定 512 样本的块；hop 必须整除它，缓冲逻辑才成立。
+
+    hop=192（配 n_fft=384 才能通过 STFTConfig 自己的 COLA 校验）不整除 512，
+    专门用来触发这条防线，跟项目实际使用的 hop=256 默认配置无关。
+    """
+    from rtse.audio.stft import STFTConfig
+    from rtse.vad.silero import SileroVAD
+
+    bad_cfg = STFTConfig(n_fft=384, hop=192)
+    assert 512 % bad_cfg.hop != 0  # 前提成立才有测试价值
+    with pytest.raises(ValueError, match="整除"):
+        SileroVAD(bad_cfg)
+
+
+def test_silero_vad_survives_many_hops_without_crashing():
+    """hop=256 是 512 的整数倍，缓冲每两次 process() 触发一次真实推理——
+    多跑几百帧，确认缓冲边界不会累积出错或抛异常。"""
+    vad = build_vad("silero")
+    for _ in range(500):
+        vad.process(RNG.standard_normal(DEFAULT_CONFIG.hop) * 0.1)
+
+
+def test_silero_vad_prob_in_unit_interval():
+    vad = build_vad("silero")
+    for _ in range(30):
+        vf = vad.process(RNG.standard_normal(DEFAULT_CONFIG.hop) * 0.2)
+        assert 0.0 <= vf.prob <= 1.0
+
+
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parents[1] / "ref").exists(),
+    reason="需要本地的 ref/speech-processing-master 参考语料，不在仓库里",
+)
+def test_silero_vad_detects_real_speech_recording():
+    """合成的正弦谐波信号骗不过神经网络 VAD——手动验证过 Silero 对着这类
+    "假语音"给出的概率反而低于纯噪声（真实、符合预期：它是在真实录音上训练的，
+    没见过这种信号）。所以这条必须用真实录音测，而不是像 EnergyVAD/WebRTCVAD
+    那样能用合成信号糊弄过去；真实语料不在仓库里，本地没有就跳过。
+    """
+    import soundfile as sf
+
+    ref_dir = Path(__file__).resolve().parents[1] / "ref" / "speech-processing-master"
+    wav = next(ref_dir.rglob("sf1_cln.wav"), None) or next(ref_dir.rglob("*cln*.wav"), None)
+    if wav is None:
+        pytest.skip("ref/ 下找不到示例语音")
+    y, sr = sf.read(wav)
+    assert sr == SR
+
+    decisions = build_vad("silero").process_signal(y)
+    assert decisions.mean() > 0.7, f"真实语音判为语音的比例只有 {decisions.mean():.2f}"
 
 
 # ----------------------------------------------------------------- 管线
@@ -401,3 +456,99 @@ def test_pipeline_vad_gate_attenuates_silence(speech):
     spk_ratio = np.sqrt(np.mean(gated[spk] ** 2)) / (np.sqrt(np.mean(ungated[spk] ** 2)) + 1e-12)
     assert sil_ratio < 0.5, f"门控未压低静音段（比值 {sil_ratio:.2f}）"
     assert spk_ratio > 0.9, f"门控误伤了语音段（比值 {spk_ratio:.2f}）"
+
+
+def test_mmse_lsa_defaults_to_fast_poly_approx():
+    """默认值是 False（走多项式近似）——见 F-04，已验证不影响降噪质量。"""
+    from rtse.dsp.enhancers import MMSELogSTSA
+
+    assert MMSELogSTSA().exact is False
+
+
+def test_exp1_half_poly_matches_exact_within_bound():
+    """多项式近似的单点误差要在已知界内。
+
+    这条测过一次假阳性：第一版实现漏了一个 0.5 因子，端到端 SI-SDR 测试量出
+    2.5dB 的"回退"，一度以为是 decision-directed 反馈环把误差放大了。
+    补上那个因子后，单点误差和端到端结果才对上号——两者本该一致，
+    只是被抄写 bug 短暂地弄得像是两回事。
+    """
+    from scipy.special import exp1
+
+    from rtse.dsp.enhancers import _exp1_half_poly
+
+    nu = np.geomspace(1e-6, 500, 200)
+    exact = 0.5 * exp1(nu)
+    approx = _exp1_half_poly(nu)
+    err_db = 20 * np.log10(np.exp(exact)) - 20 * np.log10(np.exp(approx))
+    assert np.max(np.abs(err_db)) < 0.6, f"最大增益误差 {np.max(np.abs(err_db)):.2f} dB 超出已知界"
+
+
+@pytest.mark.parametrize(
+    "kind,snr",
+    [(k, s) for k in ("white", "babble", "keyboard") for s in (-5, 0, 5, 10, 15)],
+)
+def test_mmse_lsa_poly_approx_matches_exact_si_sdr(kind, snr):
+    """近似解不能只在单一条件下测——15 组噪声类型 × SNR 组合都要接近精确解，
+    否则"整体安全"这个结论只是挑对了一个巧合的测试点。
+    """
+    from rtse.dsp.enhancers import MMSELogSTSA
+
+    n = SR * 4
+    t = np.arange(n) / SR
+    f0 = 110 + 30 * np.sin(2 * np.pi * RNG.uniform(0.8, 1.8) * t)
+    sig = sum(np.sin(h * 2 * np.pi * np.cumsum(f0) / SR) / h for h in range(1, 12))
+    env = 0.5 + 0.5 * np.sin(2 * np.pi * RNG.uniform(3, 5) * t)
+    env[int(0.8 * SR) : int(1.3 * SR)] = 0
+    env[int(2.5 * SR) : int(3.0 * SR)] = 0
+    speech_sig = (sig * env) / np.max(np.abs(sig * env)) * 0.6
+
+    noisy, _ = mix_at_snr(speech_sig, make_noise(kind, n, RNG), snr, rng=RNG)
+    gain_exact = si_sdr(speech_sig, MMSELogSTSA(exact=True).process(noisy)) - si_sdr(speech_sig, noisy)
+    gain_approx = si_sdr(speech_sig, MMSELogSTSA(exact=False).process(noisy)) - si_sdr(speech_sig, noisy)
+    assert abs(gain_exact - gain_approx) < 0.5, (
+        f"{kind}@{snr}dB：精确解收益 {gain_exact:.3f}dB，近似解 {gain_approx:.3f}dB，"
+        f"差距 {gain_exact - gain_approx:+.3f}dB 超出预期范围"
+    )
+
+
+def test_backoff_is_off_for_specsub_on_for_the_other_two():
+    """谱减法不该开收手混合——它的过减因子本来就随帧 SNR 自适应，
+    高 SNR 段实测没有负收益（+0.12 dB）。重复施加等于处理两次。"""
+    assert build_dsp("specsub").backoff_snr_db is None
+    assert build_dsp("wiener").backoff_snr_db is not None
+    assert build_dsp("mmse-lsa").backoff_snr_db is not None
+
+
+def test_backoff_leaves_clean_input_nearly_untouched(speech):
+    """干净输入进来，收手机制要让维纳/MMSE-LSA 基本透传。
+
+    修复前实测 clean 透传 32.2 dB（维纳），修复后 47.5 dB。
+    这条钉的是"收手确实生效"，不是具体数值——数值随语料变。
+    """
+    from rtse.dsp.enhancers import MMSELogSTSA, WienerFilter
+
+    for cls in (WienerFilter, MMSELogSTSA):
+        off = si_sdr(speech, cls(backoff_snr_db=None).process(speech))
+        on = si_sdr(speech, cls().process(speech))
+        assert on > off + 3.0, (
+            f"{cls.__name__} 收手后干净输入应明显少受损：关={off:.1f}dB 开={on:.1f}dB"
+        )
+
+
+@pytest.mark.parametrize("cls_name", ["wiener", "mmse-lsa"])
+def test_backoff_does_not_sacrifice_low_snr_gain(speech, cls_name):
+    """收手只该在噪声已经很少时起作用；低 SNR 段的降噪收益不能被削掉。
+
+    这是扫参时的核心约束：(0,12) 那档高 SNR 更好，但 mmse-lsa 的低 SNR 收益
+    从 +0.52 掉到 +0.41，所以最终选了 (2,14)。
+    """
+    from rtse.dsp import build_dsp as _b
+    from rtse.dsp.enhancers import MMSELogSTSA, WienerFilter
+
+    cls = WienerFilter if cls_name == "wiener" else MMSELogSTSA
+    noisy, _ = mix_at_snr(speech, make_noise("white", speech.size, RNG), 0.0, rng=RNG)
+    base = si_sdr(speech, noisy)
+    off = si_sdr(speech, cls(backoff_snr_db=None).process(noisy)) - base
+    on = si_sdr(speech, _b(cls_name).process(noisy)) - base
+    assert on > off - 0.3, f"0 dB 下收手削掉了太多收益：关={off:+.2f}dB 开={on:+.2f}dB"
