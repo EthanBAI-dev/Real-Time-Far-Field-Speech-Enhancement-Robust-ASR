@@ -211,11 +211,15 @@ PyTorch流式 vs 整段     : 1.192e-06
 | `models/*.onnx` | `models/` |
 | `models/dnsmos/sig_bak_ovr.onnx` | `models/dnsmos/` |
 | `colab_metrics.json` | `results/` |
+| `training_gates.json` | `results/` |
+| `manifest.json` | `results/` |
+| `checkpoints/*/history.json` | `results/training_history/` |
 | `testsets_v1.zip`（notebook 01 生成） | 解压到 `data/`，得到 `data/testsets/*` |
 
 > `archives/` 里的几十 GB 压缩包**不用下载**，它们只在 Colab 上用。
 
-notebook 03 的最后一个 cell 会把前三样打包成 `colab_outputs.zip`，下载一个就够。
+notebook 03 的最后一个 cell 会把模型、指标、训练闸门、数据清单和训练曲线打包成
+`colab_outputs.zip`；续训所需的 `best.pt` / `last.pt` 仍从 `checkpoints/` 单独保留。
 
 放好后本地执行：
 

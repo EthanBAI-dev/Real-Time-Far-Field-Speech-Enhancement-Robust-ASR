@@ -51,7 +51,8 @@ uv run rtse-doctor
 | | 状态 | 说明 |
 |---|---|---|
 | 全部源码 | ✅ 在仓库里 | |
-| **训练好的 ONNX 模型** | ✅ 在仓库里 | `models/crn-{nano,lite,large}.onnx`，约 9.5 MB，**clone 下来就能直接推理** |
+| **V1冒烟 ONNX 模型** | ✅ 在仓库里 | `models/crn-nano.onnx`，约475 KB，可验证推理闭环；3 epoch结果不代表最终质量 |
+| **正式 ONNX 模型** | ⏸ 待训练 | Nano通过闸门后再训练/导出Lite与Large |
 | Colab notebooks | ✅ 在仓库里 | `notebooks/`（三个，按顺序跑） |
 | 评测结果 json | ⏸ 已清空 | 旧数据集的结果已移除，等新数据跑出 |
 | **固定测试集** | ❌ 需要下载 | 几百 MB，太大不入库；notebook 01 的产物 |
@@ -95,7 +96,8 @@ uv run rtse-server
 ```
 
 启动 Web 演示（浏览器打开 http://127.0.0.1:8000 ），方法下拉框会自动扫描
-`models/*.onnx`，三档神经模型和三种 DSP 方法都在。
+`models/*.onnx` 会自动发现当前回传的神经模型；三种 DSP 方法始终可用。
+目前顶层仅放V1冒烟Nano，避免把旧数据训练的Lite误混进新版评测。
 
 ```bash
 uv run rtse-asr transcribe data/demo/chinese_news.wav

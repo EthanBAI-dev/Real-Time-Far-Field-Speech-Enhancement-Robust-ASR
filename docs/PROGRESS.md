@@ -355,5 +355,11 @@
 - Colab首轮实跑暴露 I-32：DNS真实噪声的直流偏置造成名义/实测SNR定义不一致，
   最大偏差4.03 dB。已统一SNR定义并改为输入/目标共用写盘增益；notebook新增
   写盘后SNR抽查，带直流偏置的本地回归测试通过。
+- 已导入修复后的V1冒烟产物：DNS/AISHELL各81条、WenetSpeech 30条，所有文件齐全；
+  两套受控集写盘SNR最大误差0.0001 dB。Nano ONNX单样本RTF=0.017，本地DNS结果
+  与Colab完全一致。完整冒烟结果显示Nano 3 epoch尚不可用：DNS ΔSI-SDR −6.28 dB，
+  AISHELL ΔCER +0.096，WenetSpeech ΔCER +0.037（详见F-13/METRICS）。
+- 回传审计发现 `colab_outputs.zip` 漏了训练闸门和数据清单（I-33）；已更新03打包单元格，
+  后续自动携带 `training_gates.json`、`manifest.json` 和训练history。
 
 <!-- 后续条目在此追加 -->

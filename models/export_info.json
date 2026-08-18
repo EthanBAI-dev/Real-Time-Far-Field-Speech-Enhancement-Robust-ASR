@@ -80,100 +80,10 @@
   "causal": true,
   "verification": {
    "n_frames": 60,
-   "onnx_vs_pytorch_streaming": 3.5762786865234375e-06,
-   "onnx_vs_pytorch_batch": 2.86102294921875e-06,
-   "pytorch_streaming_vs_batch": 2.7418136596679688e-06,
-   "relative_error": 9.536322541312343e-07,
-   "state_shape_stable": true,
-   "tolerance": 0.0001,
-   "passed": true
-  }
- },
- "crn-lite": {
-  "path": "/content/drive/MyDrive/Audio AI/RTSE/models/crn-lite.onnx",
-  "size_kb": 2237.9,
-  "params": 569282,
-  "opset": 17,
-  "input_names": [
-   "frame",
-   "cache_0",
-   "cache_1",
-   "cache_2",
-   "cache_3",
-   "cache_4",
-   "gru_h"
-  ],
-  "output_names": [
-   "out_frame",
-   "cache_0_out",
-   "cache_1_out",
-   "cache_2_out",
-   "cache_3_out",
-   "cache_4_out",
-   "gru_h_out"
-  ],
-  "state_shapes": {
-   "cache_0": [
-    1,
-    2,
-    1,
-    257
-   ],
-   "cache_1": [
-    1,
-    16,
-    1,
-    129
-   ],
-   "cache_2": [
-    1,
-    32,
-    1,
-    65
-   ],
-   "cache_3": [
-    1,
-    32,
-    1,
-    33
-   ],
-   "cache_4": [
-    1,
-    48,
-    1,
-    17
-   ],
-   "gru_h": [
-    2,
-    1,
-    128
-   ]
-  },
-  "params_M": 0.5693,
-  "enc_channels": [
-   16,
-   32,
-   32,
-   48,
-   64
-  ],
-  "gru": "2x128",
-  "freq_dims": [
-   257,
-   129,
-   65,
-   33,
-   17,
-   9
-  ],
-  "receptive_field_frames": 6,
-  "causal": true,
-  "verification": {
-   "n_frames": 60,
-   "onnx_vs_pytorch_streaming": 3.635883331298828e-06,
-   "onnx_vs_pytorch_batch": 5.364418029785156e-06,
-   "pytorch_streaming_vs_batch": 4.470348358154297e-06,
-   "relative_error": 2.336150696462611e-06,
+   "onnx_vs_pytorch_streaming": 6.4373016357421875e-06,
+   "onnx_vs_pytorch_batch": 7.152557373046875e-06,
+   "pytorch_streaming_vs_batch": 4.76837158203125e-06,
+   "relative_error": 6.839085794780449e-07,
    "state_shape_stable": true,
    "tolerance": 0.0001,
    "passed": true

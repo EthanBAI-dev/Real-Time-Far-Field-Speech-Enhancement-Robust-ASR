@@ -102,22 +102,64 @@ MMSE-LSA 比维纳慢 60%，代价来自 `scipy.special.exp1`（指数积分）�
 
 ---
 
-## 3. V1 正式结果表（待新配方重训与三测试集回传）
+## 3. V1 冒烟结果（Nano 3 epoch，仅验证闭环）
+
+> 规模：DNS 81条、AISHELL 81条、WenetSpeech 30条；ASR 为
+> faster-whisper `small`。该模型只训练3 epoch，结果用于决定能否进入正式训练，
+> **不作为最终模型成绩**。
 
 ### 3.1 DNS 客观质量
+
+| 方法 | SI-SDR | ΔSI-SDR | STOI | ESTOI | PESQ（Colab） |
+|---|---:|---:|---:|---:|---:|
+| noisy | 5.91 | — | 0.791 | 0.657 | 1.526 |
+| specsub | 5.27 | −0.64 | 0.783 | 0.644 | 1.515 |
+| wiener | 4.83 | −1.09 | 0.765 | 0.630 | 1.499 |
+| mmse-lsa | 4.91 | −1.00 | 0.766 | 0.631 | 1.522 |
+| crn-nano（3 epoch） | −0.37 | **−6.28** | 0.718 | 0.558 | 1.415 |
+
+### 3.2 AISHELL-1 受控中文 CER
+
+| 输入 | CER | 相对 noisy 的 ΔCER |
+|---|---:|---:|
+| clean 上界 | 0.093 | — |
+| noisy | 0.366 | — |
+| crn-nano（3 epoch） | 0.462 | **+0.096** |
+
+Nano 的配对 ΔCER 95% bootstrap CI 为 **[+0.064, +0.132]**，退化方向明确。
+
+### 3.3 WenetSpeech 真实会议 CER
+
+| 输入 | CER | 相对原始输入的 ΔCER |
+|---|---:|---:|
+| 原始会议输入 | 0.199 | — |
+| crn-nano（3 epoch） | 0.237 | +0.037 |
+
+配对 ΔCER 95% bootstrap CI 为 **[−0.003, +0.079]**；样本只有30条，尚不足以
+断言真实会议退化显著，但没有观察到改善。
+
+### 3.4 冒烟结论
+
+数据下载、三套索引、SNR校准、ONNX流式推理和CER评测闭环全部跑通；但3-epoch
+Nano没有通过质量门槛。下一步应继续正式训练并使用训练闸门筛选，不能把这份模型
+包装成可用的降噪结果。
+
+## 4. V1 正式结果表（待正式重训与三测试集回传）
+
+### 4.1 DNS 客观质量
 
 | 方法 | SI-SDR | ΔSI-SDR | STOI | ESTOI | PESQ | DNSMOS |
 |---|---:|---:|---:|---:|---:|---:|
 | noisy | 待测 | — | 待测 | 待测 | 待测 | 待测 |
 | DSP / 新CRN | 待测 | 待测 | 待测 | 待测 | 待测 | 待测 |
 
-### 3.2 AISHELL-1 受控中文 CER
+### 4.2 AISHELL-1 受控中文 CER
 
 | 方法 | clean上界 CER | noisy CER | enhanced CER | ΔCER |
 |---|---:|---:|---:|---:|
 | 待新数据 | 待测 | 待测 | 待测 | 待测 |
 
-### 3.3 WenetSpeech 真实会议 CER
+### 4.3 WenetSpeech 真实会议 CER
 
 | 方法 | 原始输入 CER | 增强后 CER | ΔCER |
 |---|---:|---:|---:|
@@ -126,7 +168,7 @@ MMSE-LSA 比维纳慢 60%，代价来自 `scipy.special.exp1`（指数积分）�
 > WenetSpeech 没有“clean上界”行，也不计算 SI-SDR/STOI/PESQ；它的原始会议录音
 > 本身就是待处理输入。AISHELL与DNS的真实/合成RIR按相同实测RT60桶比较。
 
-## 4. 旧单测试集诊断结果（2026-08-18，不作为最终成绩）
+## 5. 旧单测试集诊断结果（2026-08-18，不作为最终成绩）
 
 **数据来源**：`uv run rtse-eval --cer-per-cell 2`，
 [`results/local_metrics.json`](../results/local_metrics.json)。

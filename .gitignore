@@ -22,10 +22,9 @@ __pycache__/
 # 用 `/models/*` 而不是 `/models/`：目录形式会让 git 直接不下探，
 # 下面那些 `!` 例外就永远不生效。
 /models/*
-# 例外：训练好的 ONNX 模型入库（三档合计约 9.5 MB，远低于 GitHub 的单文件
-# 100 MB 上限），这样换一台机器 clone 下来就能直接跑推理和 Web 演示，
-# 不必等 Colab 重训。checkpoint（.pt，含优化器状态，几十 MB）仍然不入库——
-# 那是训练中间态，续训从 Drive 取。
+# 例外：当前通过 Colab 回传的 ONNX 模型入库，换机器 clone 后能直接验证推理闭环。
+# V1 冒烟阶段只有 crn-nano；Lite/Large 需在新版配方正式训练后再加入。
+# checkpoint（.pt，含优化器状态）仍不入库——那是训练中间态，续训从 Drive 取。
 !models/crn-*.onnx
 !models/export_info.json
 # 未训练的随机权重模型（仅供集成测试）也带上，2.7 MB，
@@ -41,6 +40,7 @@ results/**/*.flac
 results/**/*.npz
 !results/**/*.json
 !results/**/*.md
+/results/_pre_v1_import_*/
 
 # 系统
 Thumbs.db

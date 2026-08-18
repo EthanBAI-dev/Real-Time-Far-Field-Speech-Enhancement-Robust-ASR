@@ -23,7 +23,9 @@
 
 > 换一台新机器从零开始，看 [docs/SETUP_NEW_MACHINE.md](docs/SETUP_NEW_MACHINE.md)
 > ——已实测：clone → 装依赖 → 跑测试 → 出增强音频，全程不需要旧机器上的任何文件。
-> **训练好的三档 ONNX 模型已随仓库分发**（约 9.5 MB），clone 下来就能直接推理。
+> 仓库当前随附 **V1 冒烟版 crn-nano ONNX**（约475 KB），clone 后可直接验证
+> 流式推理闭环；它只训练3 epoch且未通过质量门槛，不能当作最终模型。
+> crn-lite / large 的结构和导出代码已实现，正式权重等待新版配方重训。
 
 ```bash
 uv sync

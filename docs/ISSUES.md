@@ -1133,4 +1133,17 @@ notebook 里未引用此编号，其内容可能写在另一台机器上、未�
 - **影响范围**：本次失败的测试集不要继续使用；DNS/AISHELL原始下载无需重来，
   只需换新 `rtse-colab.zip` 后重新运行生成三套测试集的单元格。
 
+---
+
+## I-33 · Colab 回传包遗漏训练闸门与数据清单
+
+- **状态**：✅ 打包逻辑已修复（2026-08-18）；当前回传缺项已登记，不伪造补写
+- **现象**：用户下载的冒烟产物包含模型、客观指标、三套测试集和checkpoint，
+  但没有 `training_gates.json` 与 `manifest.json`。
+- **影响**：不妨碍本地推理和评测；但换电脑后无法直接审计模型是否通过训练闸门，
+  也缺少语音/噪声划分清单。checkpoint内部仍保留训练配置与history。
+- **修复**：notebook 03 的 `colab_outputs.zip` 现在额外包含
+  `training_gates.json`、`manifest.json` 和 `checkpoints/*/history.json`；
+  体积较大的 `best.pt` / `last.pt` 仍只在需要续训时单独保留。
+
 <!-- 后续条目在此追加 -->

@@ -508,7 +508,18 @@ for key in sorted(agg, key=lambda x: tuple(str(v) for v in x)):
 | `models/*.onnx` | `models/` |
 | `models/dnsmos/sig_bak_ovr.onnx` | `models/dnsmos/` |
 | `colab_metrics.json` | `results/` |
+| `training_gates.json` | `results/`（训练闸门审计记录） |
+| `manifest.json` | `results/`（数据划分与来源记录） |
+| `checkpoints/*/history.json` | `results/training_history/` |
 | `testsets_v1.zip`（01生成） | 解压到 `data/`，得到 `data/testsets/*` |
+""")
+    _set(nb, 12, "code", r"""
+# 回传包同时带上模型、指标、训练闸门、数据清单和训练曲线。
+# best.pt / last.pt 体积较大且只在续训时需要，仍保留在 Drive checkpoints/ 中。
+!cd "{DRIVE}" && rm -f colab_outputs.zip && zip -q -r colab_outputs.zip \
+    models colab_metrics.json training_gates.json manifest.json checkpoints/*/history.json \
+    && ls -lh colab_outputs.zip
+print(f'从 Google Drive 下载 {DRIVE}/colab_outputs.zip 即可。')
 """)
     _save("03_export_eval.ipynb", nb)
 
