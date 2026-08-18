@@ -44,15 +44,32 @@ def _build(method: str, model_dir: Path):
     return OnnxEnhancer(model_dir / f"{method}.onnx")
 
 
+#: 测试集的分层维度。CER 抽样按这三个维度分桶，汇总也按它们拆开。
+STRATA = ("snr", "noise_kind", "rir_kind")
+
+
+def _cell(r: dict) -> tuple:
+    """一条记录所属的实验格。字段缺失直接报错而不是给默认值——
+    默认值会让schema 不匹配悄悄退化成"所有样本挤在同一格"，
+    抽出来的 CER 只反映某一种条件却看不出异常。"""
+    missing = [k for k in STRATA if k not in r]
+    if missing:
+        raise KeyError(
+            f"测试集记录缺少字段 {missing}。当前 index.json 的字段是 "
+            f"{sorted(r)}——这套评测按 {STRATA} 分层，"
+            f"数据集换过之后要同步更新（见 docs/ISSUES.md I-29）。")
+    return tuple(r[k] for k in STRATA)
+
+
 def _stratified(records: list[dict], per_cell: int) -> list[dict]:
-    """按 (snr, noise, t60) 分组，每组取前 ``per_cell`` 条。
+    """按实验格分组，每组取前 ``per_cell`` 条。
 
     直接取前 N 条会全部落在同一个实验格里（记录是按格生成的），
     那样算出来的 CER 只反映某一种噪声/SNR，没有代表性。
     """
     buckets: dict[tuple, list[dict]] = defaultdict(list)
     for r in records:
-        buckets[(r["snr"], r["noise"], r["t60"])].append(r)
+        buckets[_cell(r)].append(r)
     out = []
     for key in sorted(buckets):
         out.extend(buckets[key][:per_cell])
@@ -129,8 +146,10 @@ def main() -> int:
             pipe.reset()
             out, _ = pipe.process_signal(noisy)
             rows.append({
-                "id": r["id"], "method": method, "snr": r["snr"],
-                "noise": r["noise"], "t60": r["t60"],
+                "id": r["id"], "method": method,
+                **{k: r[k] for k in STRATA},
+                "rt60_measured": r.get("rt60_measured"),
+                "snr_measured": r.get("snr_measured"),
                 "si_sdr": si_sdr(clean, out), "seg_snr": seg_snr(clean, out),
                 "stoi": stoi(clean, out), "estoi": estoi(clean, out),
             })
@@ -160,8 +179,8 @@ def main() -> int:
         if "clean(上界)" not in done_cer:
             for i, r in enumerate(sample):
                 txt = engine.transcribe(read_audio(root / r["clean"])).text
-                cer_rows.append({"id": r["id"], "method": "clean(上界)", "snr": r["snr"],
-                                 "noise": r["noise"], "t60": r["t60"],
+                cer_rows.append({"id": r["id"], "method": "clean(上界)",
+                                 **{k: r[k] for k in STRATA},
                                  "cer": cer_fn(r["text"], txt)})
                 console.print(f"  clean {i + 1}/{len(sample)}", end="\r")
             save()
@@ -179,8 +198,8 @@ def main() -> int:
                 pipe.reset()
                 out, _ = pipe.process_signal(noisy)
                 txt = engine.transcribe(np.asarray(out, dtype=np.float32)).text
-                cer_rows.append({"id": r["id"], "method": method, "snr": r["snr"],
-                                 "noise": r["noise"], "t60": r["t60"],
+                cer_rows.append({"id": r["id"], "method": method,
+                                 **{k: r[k] for k in STRATA},
                                  "cer": cer_fn(r["text"], txt)})
                 el = time.time() - t1
                 console.print(f"  [{mi + 1}/{len(methods)}] {method:<10} "
