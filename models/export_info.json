@@ -80,10 +80,10 @@
   "causal": true,
   "verification": {
    "n_frames": 60,
-   "onnx_vs_pytorch_streaming": 2.1457672119140625e-06,
-   "onnx_vs_pytorch_batch": 2.9802322387695312e-06,
-   "pytorch_streaming_vs_batch": 3.0994415283203125e-06,
-   "relative_error": 7.282834045534461e-07,
+   "onnx_vs_pytorch_streaming": 3.5762786865234375e-06,
+   "onnx_vs_pytorch_batch": 2.86102294921875e-06,
+   "pytorch_streaming_vs_batch": 2.7418136596679688e-06,
+   "relative_error": 9.536322541312343e-07,
    "state_shape_stable": true,
    "tolerance": 0.0001,
    "passed": true
@@ -170,100 +170,10 @@
   "causal": true,
   "verification": {
    "n_frames": 60,
-   "onnx_vs_pytorch_streaming": 2.5033950805664062e-06,
-   "onnx_vs_pytorch_batch": 2.9802322387695312e-06,
-   "pytorch_streaming_vs_batch": 2.5033950805664062e-06,
-   "relative_error": 8.532270617410406e-07,
-   "state_shape_stable": true,
-   "tolerance": 0.0001,
-   "passed": true
-  }
- },
- "crn-large": {
-  "path": "/content/drive/MyDrive/Audio AI/RTSE/models/crn-large.onnx",
-  "size_kb": 6930.8,
-  "params": 1770722,
-  "opset": 17,
-  "input_names": [
-   "frame",
-   "cache_0",
-   "cache_1",
-   "cache_2",
-   "cache_3",
-   "cache_4",
-   "gru_h"
-  ],
-  "output_names": [
-   "out_frame",
-   "cache_0_out",
-   "cache_1_out",
-   "cache_2_out",
-   "cache_3_out",
-   "cache_4_out",
-   "gru_h_out"
-  ],
-  "state_shapes": {
-   "cache_0": [
-    1,
-    2,
-    1,
-    257
-   ],
-   "cache_1": [
-    1,
-    24,
-    1,
-    129
-   ],
-   "cache_2": [
-    1,
-    48,
-    1,
-    65
-   ],
-   "cache_3": [
-    1,
-    64,
-    1,
-    33
-   ],
-   "cache_4": [
-    1,
-    64,
-    1,
-    17
-   ],
-   "gru_h": [
-    2,
-    1,
-    256
-   ]
-  },
-  "params_M": 1.7707,
-  "enc_channels": [
-   24,
-   48,
-   64,
-   64,
-   96
-  ],
-  "gru": "2x256",
-  "freq_dims": [
-   257,
-   129,
-   65,
-   33,
-   17,
-   9
-  ],
-  "receptive_field_frames": 6,
-  "causal": true,
-  "verification": {
-   "n_frames": 60,
-   "onnx_vs_pytorch_streaming": 2.7418136596679688e-06,
-   "onnx_vs_pytorch_batch": 4.887580871582031e-06,
-   "pytorch_streaming_vs_batch": 4.649162292480469e-06,
-   "relative_error": 1.5783973000007684e-06,
+   "onnx_vs_pytorch_streaming": 3.635883331298828e-06,
+   "onnx_vs_pytorch_batch": 5.364418029785156e-06,
+   "pytorch_streaming_vs_batch": 4.470348358154297e-06,
+   "relative_error": 2.336150696462611e-06,
    "state_shape_stable": true,
    "tolerance": 0.0001,
    "passed": true
