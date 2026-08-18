@@ -10,21 +10,48 @@
 
 ## 0. 一次性准备
 
-### ① 本地打包代码
+### ① 本地打包
 
 ```bash
 uv run python scripts/pack_for_colab.py
 ```
 
-产出 `dist/rtse-colab.zip`（约 130 KB，只含代码与配置，不含数据/模型/venv）。
+产出 `dist/colab_upload/`，里面**只有两个文件**：
 
-> ⚠️ **代码改过就必须重新打包上传**，否则 Colab 跑的还是旧逻辑。
+| 文件 | 说明 |
+|---|---|
+| `rtse-colab.zip` | 代码包（约 220 KB，只含代码与配置，不含数据/模型/venv） |
+| `rtse_colab.ipynb` | **三册合并后的单一 notebook** |
+
+同时也打成一个 `dist/colab_upload.zip`，方便一次性传输。
+
+> **为什么合并成一个 notebook**：Colab 每个会话都会清空 `/content`，
+> 开一个 notebook 就要重跑一遍「解压代码包 + 解压 20 GB 语料」，一次约 20 分钟。
+> 原来三册分开，跑完整条链路要付三次这个开销。合并后只付一次。
+> 三个阶段用 `═══` 分割线隔开，各自的说明写在段首。
+>
+> `notebooks/` 下的三个分册仍然保留作为编辑源，但**不再上传**。
+> 改完分册后跑 `uv run python scripts/build_merged_notebook.py` 重新生成合并版。
+
+> ⚠️ **代码或 notebook 改过就必须重新打包上传**，否则 Colab 跑的还是旧逻辑。
 > 这个坑踩过：本地修好了 MCRA 的 bug、写好了 ASR 模块，Colab 那边还是旧代码，
 > 跑出来的指标是过期数字，白等一轮。
 
 ### ② 上传到 Google Drive
 
-把 `rtse-colab.zip` 传到 Drive 的项目目录。notebook 里的默认值是：
+把这两个文件传到 Drive 的 **`colab_upload/`** 子目录下（没有就新建）：
+
+```
+MyDrive/Audio AI/RTSE/
+├── colab_upload/     ← 传这里：rtse-colab.zip + rtse_colab.ipynb
+├── colab_outputs/    ← Colab 自动创建，所有产物都在这，下载就下这一个目录
+└── archives/         ← 已下好的约 20 GB 语料缓存，**位置不动**
+```
+
+> `archives/` 刻意留在原处：它的下载完成标记是按路径记的，搬走等于标记全部失效，
+> 20 GB 要重下一遍。
+
+notebook 里的默认根目录是：
 
 ```python
 DRIVE_ROOT = '/content/drive/MyDrive/Audio AI/RTSE'
@@ -33,9 +60,9 @@ DRIVE_ROOT = '/content/drive/MyDrive/Audio AI/RTSE'
 改成你实际的目录即可 —— **其余所有路径都从它派生**，不用逐个改。
 **路径里有空格没问题**，所有 shell 命令都做了引号处理。
 
-### ③ 上传 notebook
+### ③ 打开 notebook
 
-把 `notebooks/` 下三个 `.ipynb` 传到 Drive（或在 Colab 里用「上传笔记本」打开）。
+在 Drive 里找到 `colab_upload/rtse_colab.ipynb`，右键「打开方式 → Google Colaboratory」。
 
 ### ④ 运行时设置
 
@@ -50,31 +77,36 @@ DRIVE_ROOT = '/content/drive/MyDrive/Audio AI/RTSE'
 
 ## 1. 目录布局
 
-三个 notebook 都有一个**「配置」cell**，所有路径在那里定义，别处不写死。
+notebook 开头的**「配置」cell** 定义了所有路径，别处不写死。
 跑完那个 cell 会把布局打印出来：
 
 ```
 MyDrive/Audio AI/RTSE/                ← DRIVE_ROOT（持久，不受会话断线影响）
-├── rtse-colab.zip                    你手动上传的代码包
-├── archives/                         压缩包缓存（hybrid 模式）
+├── colab_upload/                     你手动上传的
+│   ├── rtse-colab.zip                代码包
+│   └── rtse_colab.ipynb              合并后的单一 notebook
+├── archives/                         压缩包缓存（hybrid 模式）★位置不动
 │   ├── datasets_fullband.clean_fullband.read_speech_000_*.tar.bz2
 │   ├── datasets_fullband.noise_fullband.audioset_*.tar.bz2
 │   ├── datasets_fullband.impulse_responses_000.tar.bz2
 │   ├── aishell1_test_0000.parquet
 │   └── wenetspeech_test_meeting.parquet
-├── manifest.json                     数据清单（含噪声平稳性分组结果）
-├── testsets/
-│   ├── dns_objective/                客观质量，有无噪参考
-│   ├── aishell_controlled/            受控中文 CER，有无噪参考
-│   └── wenetspeech_real/              原始会议 CER，无 clean 音频上界
-├── testsets_v1.zip                   三套测试集打包
-├── checkpoints/<模型名>/              ★ 训练结果
-│   ├── last.pt                       每 epoch 覆盖写，用于断点续训
-│   ├── best.pt                       验证 SI-SDR 最优，导出用它
-│   └── history.json                  训练曲线
-├── models/<模型名>.onnx               ★ 导出的流式模型
-├── colab_metrics.json                Colab 侧算的指标（含 PESQ）
-└── logs/
+└── colab_outputs/                    ★ 所有产物，要下载就整个下这一个目录
+    ├── manifest.json                 数据清单（含噪声平稳性分组结果）
+    ├── testsets/
+    │   ├── dns_objective/            客观质量，有无噪参考
+    │   ├── aishell_controlled/       受控中文 CER，有无噪参考
+    │   └── wenetspeech_real/         原始会议 CER，无 clean 音频上界
+    ├── testsets_v1.zip               三套测试集打包
+    ├── checkpoints/<模型名>/          训练结果
+    │   ├── last.pt                   每 epoch 覆盖写，用于断点续训
+    │   ├── best.pt                   验证 SI-SDR 最优，导出用它
+    │   └── history.json              训练曲线
+    ├── models/<模型名>.onnx           导出的流式模型
+    ├── training_gates.json           无害性与有效性闸门结果
+    ├── colab_metrics.json            Colab 侧算的指标（含 PESQ）
+    ├── rtse_handoff.zip              最终回传包（下载这一个就够）
+    └── logs/
 
 /content/rtse_work/data/              ← 语料解压目标（本地盘，会话结束消失）
 ├── dns_speech_000/                   DNS 干净语音（英文）
@@ -120,15 +152,17 @@ SMOKE_RUN = True          # 先跑小规模闭环；正式结果再改 False
 
 ## 2. 执行顺序
 
-三个 notebook **必须按顺序**跑，后一个依赖前一个的产出。
+先跑**初始化**的 4 个 cell，然后三个 PART **必须按顺序**跑，后一段依赖前一段的产出。
 
-| # | Notebook | 做什么 | 耗时 | 产出 |
-|---|---|---|---|---|
-| 1 | `01_data_prep.ipynb` | 下载语料、分类噪声、生成三套固定测试集 | 1~2 h（主要是下载） | `manifest.json`、`testsets_v1.zip` |
-| 2 | `02_train.ipynb` | 训练 2~3 档模型 | **看第一个 epoch 的实测值** | `checkpoints/*/best.pt` |
-| 3 | `03_export_eval.ipynb` | 导出流式 ONNX + 在 DNS 客观集算 PESQ | 约 20 min | `models/*.onnx`、`colab_metrics.json` |
+| 段 | 做什么 | 耗时 | 产出（都在 `colab_outputs/`） |
+|---|---|---|---|
+| 初始化 | 挂载 Drive → 配置 → 安装代码 → 自检 | 约 20 min（主要是解压） | — |
+| **PART 1** 数据准备 | 下载语料、分类噪声、生成三套固定测试集 | 1~2 h（主要是下载） | `manifest.json`、`testsets_v1.zip` |
+| **PART 2** 训练 | 训练模型 + 过闸门 | **看第一个 epoch 的实测值** | `checkpoints/*/best.pt`、`training_gates.json` |
+| **PART 3** 导出评测 | 导出流式 ONNX + 在 DNS 客观集算 PESQ + 打包 | 约 20 min | `models/*.onnx`、`colab_metrics.json`、`rtse_handoff.zip` |
 
-每个 notebook 的**前几个 cell 是固定的**：挂载 Drive → 配置 → 安装代码 → 自检。
+初始化那 4 个 cell **整个流程只跑一次**——这正是把三册合并成一个 notebook 的原因：
+`/content` 每个会话都会清空，原来三册分开要付三次这 20 分钟。
 
 **自检那一步不要跳** —— 它验证 Colab 侧与本地是同一条信号链路
 （STFT 逐帧一致、dBFS 标定精确到 0.000 dB）。这里一旦有偏差，
@@ -152,7 +186,7 @@ SMOKE_RUN = True          # 先跑小规模闭环；正式结果再改 False
 - **checkpoint 每个 epoch 都存，且存到 Drive**（不是本地盘，那个会话结束就没）
 - 存的不只是权重，还有**优化器动量、学习率调度状态、随机数状态**。
   只存权重的话，续训会因为动量和学习率重置而出现明显的 loss 反弹。
-- 断线后**重跑 `02_train.ipynb` 即可**，它会自动检测 `last.pt` 并从断点继续。
+- 断线后**重跑 PART 2 即可**（初始化那 4 个 cell 要先跑），它会自动检测 `last.pt` 并从断点继续。
 - **语料在 hybrid 模式下也不会白丢**：压缩包在 Drive 上，
   新会话重跑下载 cell 只会解压（几分钟），不会重新下载。
 
@@ -183,7 +217,7 @@ print(h[0]['epoch_seconds'], '秒/epoch  →', h[0]['epoch_seconds']*60/3600, '�
 
 ## 4. 导出后必须看的三个数
 
-`03_export_eval.ipynb` 会打印一组一致性校验结果。**只有 PASS 才能下载模型**：
+PART 3 会打印一组一致性校验结果。**只有 PASS 才能下载模型**：
 
 ```
 ONNX流式 vs PyTorch整段 : 1.252e-06 (相对 3.187e-07)   ← 最关键
@@ -204,7 +238,7 @@ PyTorch流式 vs 整段     : 1.192e-06
 
 ## 5. 回传清单
 
-跑完三个 notebook 后，只下载 Drive 根目录的 **`rtse_handoff.zip`**。notebook 03
+跑完三个 PART 后，只下载 `colab_outputs/` 下的 **`rtse_handoff.zip`**。PART 3
 最后一个 cell 会先核对必要产物，再生成如下结构：
 
 ```text

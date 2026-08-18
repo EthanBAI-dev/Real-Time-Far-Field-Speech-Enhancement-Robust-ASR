@@ -123,11 +123,12 @@ uv run rtse-eval data/testsets/wenetspeech_real --skip-objective --out results/w
 uv run python scripts/pack_for_colab.py
 ```
 
-2. 把 `dist/rtse-colab.zip` 上传到 Drive 的 `MyDrive/Audio AI/RTSE/`，**覆盖旧的**。
-   代码改过就必须重传，否则 Colab 跑的还是旧逻辑——这个坑踩过：
+2. 把 `dist/colab_upload/` 下的文件（`rtse-colab.zip` + 三个 `.ipynb`）平铺
+   上传到 Drive 的 `MyDrive/Audio AI/RTSE/`，**覆盖旧的**——代码或 notebook
+   改过就必须重传，否则 Colab 跑的还是旧逻辑，这个坑踩过：
    MCRA 修复和 ASR 模块都在本地改好了，Colab 那边却还是旧代码，
    跑出来的 `colab_metrics.json` 是过期数字。
-3. 按顺序跑 `notebooks/` 下的三个 notebook。数据设计与理由见
+3. 按顺序跑三个 notebook。数据设计与理由见
    [`notebooks/README.md`](../notebooks/README.md)，操作细节见
    [`COLAB_GUIDE.md`](COLAB_GUIDE.md)。
 
