@@ -24,7 +24,7 @@ from rtse.cli.evaluate import (
     _stratified,
 )
 
-TESTSET = Path("data/testset/index.json")
+TESTSET = Path("data/testsets/aishell_controlled/index.json")
 
 
 def test_cell_rejects_records_missing_strata():
@@ -69,6 +69,11 @@ def test_dataset_rejects_invalid_strata(bad):
         _dataset_strata({"strata": bad})
 
 
+def test_dataset_rejects_legacy_index_without_strata():
+    with pytest.raises(ValueError, match="必须显式声明 strata"):
+        _dataset_strata({})
+
+
 def test_real_meeting_set_does_not_require_fake_clean_audio():
     records = [{"id": "m1", "noisy": "audio/m1.wav", "text": "测试"}]
     assert _cer_upper_enabled({"cer_upper_is_meaningful": False}, records) is False
@@ -97,7 +102,7 @@ def test_single_value_ci_is_well_defined():
     assert _mean_ci95([0.25]) == {"n": 1, "mean": 0.25, "ci95": [0.25, 0.25]}
 
 
-@pytest.mark.skipif(not TESTSET.exists(), reason="需要 data/testset（Colab 产物）")
+@pytest.mark.skipif(not TESTSET.exists(), reason="需要V1 AISHELL受控集（Colab产物）")
 def test_real_testset_has_every_field_the_evaluator_reads():
     """**真实测试集**必须带齐评测要读的字段。
 
@@ -111,7 +116,7 @@ def test_real_testset_has_every_field_the_evaluator_reads():
         assert not missing, f"{len(missing)} 条记录缺少字段 {k!r}，例如 {missing[:3]}"
 
 
-@pytest.mark.skipif(not TESTSET.exists(), reason="需要 data/testset（Colab 产物）")
+@pytest.mark.skipif(not TESTSET.exists(), reason="需要V1 AISHELL受控集（Colab产物）")
 def test_real_testset_records_both_nominal_and_measured():
     """标称值与实测值都要在。
 

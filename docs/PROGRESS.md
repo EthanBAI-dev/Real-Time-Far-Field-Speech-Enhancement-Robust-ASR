@@ -361,5 +361,12 @@
   AISHELL ΔCER +0.096，WenetSpeech ΔCER +0.037（详见F-13/METRICS）。
 - 回传审计发现 `colab_outputs.zip` 漏了训练闸门和数据清单（I-33）；已更新03打包单元格，
   后续自动携带 `training_gates.json`、`manifest.json` 和训练history。
+- 新版三套数据上的DSP闭环补齐：AISHELL中谱减/维纳/MMSE-LSA CER分别为
+  0.458/0.421/0.460（基线0.366，均显著退化）；WenetSpeech为
+  0.210/0.199/0.193（基线0.199，配对区间均跨0）。03进一步改成只生成一个
+  `rtse_handoff.zip`，包含模型、checkpoint、测试集、指标、闸门、数据清单及SHA-256。
+- 按用户决定清理旧数据版本：删除旧 `data/testset`/ZIP、旧Lite与备份权重、旧checkpoint、
+  旧 `local_metrics.json`；评测器和集成测试也不再兼容旧索引。保留V1三套测试集、
+  当前Nano、DNSMOS以及CI使用的 `_untrained` 随机权重。
 
 <!-- 后续条目在此追加 -->

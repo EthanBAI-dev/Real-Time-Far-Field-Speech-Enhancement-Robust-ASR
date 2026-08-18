@@ -204,22 +204,23 @@ PyTorch流式 vs 整段     : 1.192e-06
 
 ## 5. 回传清单
 
-跑完三个 notebook 后，从 Drive 下载（路径相对 `DRIVE_ROOT`）：
+跑完三个 notebook 后，只下载 Drive 根目录的 **`rtse_handoff.zip`**。notebook 03
+最后一个 cell 会先核对必要产物，再生成如下结构：
 
-| Drive 上 | 放到本地 |
-|---|---|
-| `models/*.onnx` | `models/` |
-| `models/dnsmos/sig_bak_ovr.onnx` | `models/dnsmos/` |
-| `colab_metrics.json` | `results/` |
-| `training_gates.json` | `results/` |
-| `manifest.json` | `results/` |
-| `checkpoints/*/history.json` | `results/training_history/` |
-| `testsets_v1.zip`（notebook 01 生成） | 解压到 `data/`，得到 `data/testsets/*` |
+```text
+rtse_handoff/
+├── HANDOFF_MANIFEST.json       文件大小与SHA-256
+├── models/                     ONNX、导出验证、DNSMOS
+├── checkpoints/<本轮模型>/     best.pt、last.pt、history.json
+├── data/testsets/              DNS、AISHELL、WenetSpeech三套固定测试集
+└── results/
+    ├── colab_metrics.json
+    ├── training_gates.json
+    └── manifest.json
+```
 
-> `archives/` 里的几十 GB 压缩包**不用下载**，它们只在 Colab 上用。
-
-notebook 03 的最后一个 cell 会把模型、指标、训练闸门、数据清单和训练曲线打包成
-`colab_outputs.zip`；续训所需的 `best.pt` / `last.pt` 仍从 `checkpoints/` 单独保留。
+把 `rtse_handoff/` 内的目录合并到本地仓库根目录即可。包里不会包含 `archives/`
+几十GB的原始下载缓存，也只收集本轮 `MODELS` 声明的checkpoint，避免旧模型混入。
 
 放好后本地执行：
 

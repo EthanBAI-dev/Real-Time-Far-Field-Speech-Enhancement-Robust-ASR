@@ -1142,8 +1142,9 @@ notebook 里未引用此编号，其内容可能写在另一台机器上、未�
   但没有 `training_gates.json` 与 `manifest.json`。
 - **影响**：不妨碍本地推理和评测；但换电脑后无法直接审计模型是否通过训练闸门，
   也缺少语音/噪声划分清单。checkpoint内部仍保留训练配置与history。
-- **修复**：notebook 03 的 `colab_outputs.zip` 现在额外包含
-  `training_gates.json`、`manifest.json` 和 `checkpoints/*/history.json`；
-  体积较大的 `best.pt` / `last.pt` 仍只在需要续训时单独保留。
+- **修复**：notebook 03 不再生成零散的 `colab_outputs.zip`，改为单一
+  `rtse_handoff.zip`，直接包含本轮模型、best/last/history checkpoint、三套测试集、
+  `training_gates.json`、`manifest.json`、Colab指标以及逐文件SHA-256清单。
+  原始 `archives/` 不打包，且checkpoint只收集本轮 `MODELS`，避免旧权重混入。
 
 <!-- 后续条目在此追加 -->

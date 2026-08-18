@@ -40,7 +40,6 @@ results/**/*.flac
 results/**/*.npz
 !results/**/*.json
 !results/**/*.md
-/results/_pre_v1_import_*/
 
 # 系统
 Thumbs.db

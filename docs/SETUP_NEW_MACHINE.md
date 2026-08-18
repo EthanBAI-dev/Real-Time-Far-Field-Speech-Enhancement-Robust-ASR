@@ -54,16 +54,16 @@ uv run rtse-doctor
 | **V1冒烟 ONNX 模型** | ✅ 在仓库里 | `models/crn-nano.onnx`，约475 KB，可验证推理闭环；3 epoch结果不代表最终质量 |
 | **正式 ONNX 模型** | ⏸ 待训练 | Nano通过闸门后再训练/导出Lite与Large |
 | Colab notebooks | ✅ 在仓库里 | `notebooks/`（三个，按顺序跑） |
-| 评测结果 json | ⏸ 已清空 | 旧数据集的结果已移除，等新数据跑出 |
+| V1冒烟评测结果 | ✅ 在仓库里 | DNS客观、AISHELL受控CER、WenetSpeech真实会议CER |
 | **固定测试集** | ❌ 需要下载 | 几百 MB，太大不入库；notebook 01 的产物 |
 | DNSMOS 模型 | ❌ 需要下载 | 微软的权重文件，不转发分发 |
 | 训练 checkpoint | ❌ 在 Drive 上 | `.pt` 含优化器状态，几十 MB，续训时才需要 |
 
 ### 4.1 测试集（要算指标才需要）
 
-从 Google Drive 下载 `testsets_v1.zip`（notebook 01 的产物），解压到项目根的
-`data/`，得到 `data/testsets/dns_objective`、`aishell_controlled` 和
-`wenetspeech_real` 三个目录。
+从 Google Drive 下载 notebook 03 生成的 `rtse_handoff.zip`，解压后把其中
+`rtse_handoff/` 的内容合并到项目根目录。测试集会直接落到
+`data/testsets/{dns_objective,aishell_controlled,wenetspeech_real}`，不需要再分别下载。
 
 两套受控集的 `index.json` 每条记录都带 `rt60_bucket` 和
 `rt60_measured`（Schroeder 反向积分实测）。**两者应当接近**——踩过一次坑

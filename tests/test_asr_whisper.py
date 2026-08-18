@@ -53,16 +53,22 @@ def test_real_transcription_on_local_testset_sample(model_size, max_cer):
     from rtse.asr.scoring import cer
     from rtse.audio.io import read_audio
 
-    idx = json.loads(Path("data/testset/index.json").read_text(encoding="utf-8"))
-    # T60=0.0 只存在于 snr=5/babble 那条单独的混响扫描里（见 01_data_prep.ipynb
-    # 的 cells 构造：T60 扫描固定了 snr=5），主网格（T60=0.3）才有高 SNR 样本。
-    recs = [r for r in idx["records"] if r.get("text") and r["snr"] >= 15 and r["t60"] == 0.3][:5]
+    root = Path("data/testsets/aishell_controlled")
+    idx = json.loads((root / "index.json").read_text(encoding="utf-8"))
+    # 使用V1的clean恒等格 + 15 dB低混响格；不再依赖已删除的旧单测试集字段。
+    recs = [
+        r for r in idx["records"]
+        if r.get("text") and (
+            r["snr"] == "clean"
+            or (isinstance(r["snr"], int) and r["snr"] >= 15 and r["rt60_bucket"] <= 0.2)
+        )
+    ][:5]
     assert recs, "测试集里没找到符合条件的样本"
 
     engine = WhisperASR(model_size=model_size)
     cers = []
     for rec in recs:
-        clean = read_audio(f"data/testset/{rec['clean']}")
+        clean = read_audio(root / rec["clean"])
         result = engine.transcribe(clean, sr=SAMPLE_RATE)
         assert result.text, "干净语音在高 SNR 下转写不该是空文本"
         assert result.language == "zh"

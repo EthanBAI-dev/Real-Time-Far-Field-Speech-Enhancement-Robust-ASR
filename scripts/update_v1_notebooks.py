@@ -503,23 +503,86 @@ for key in sorted(agg, key=lambda x: tuple(str(v) for v in x)):
     _set(nb, 11, "markdown", r"""
 ## 4. 打包回传
 
-| Drive 上的文件 | 放到本地 |
-|---|---|
-| `models/*.onnx` | `models/` |
-| `models/dnsmos/sig_bak_ovr.onnx` | `models/dnsmos/` |
-| `colab_metrics.json` | `results/` |
-| `training_gates.json` | `results/`（训练闸门审计记录） |
-| `manifest.json` | `results/`（数据划分与来源记录） |
-| `checkpoints/*/history.json` | `results/training_history/` |
-| `testsets_v1.zip`（01生成） | 解压到 `data/`，得到 `data/testsets/*` |
+最后只需下载一个 `rtse_handoff.zip`。解压到新电脑的仓库根目录后，会直接得到：
+
+- `models/`：本轮ONNX、导出验证信息、DNSMOS；
+- `checkpoints/`：本轮模型的best/last/history，可续训；
+- `data/testsets/`：三套固定测试集；
+- `results/`：Colab客观指标、训练闸门、数据清单；
+- `HANDOFF_MANIFEST.json`：每个文件的大小与SHA-256，供本地检查传输完整性。
+
+不会包含几十GB的 `archives/` 原始下载缓存，也不会夹带旧模型。
 """)
     _set(nb, 12, "code", r"""
-# 回传包同时带上模型、指标、训练闸门、数据清单和训练曲线。
-# best.pt / last.pt 体积较大且只在续训时需要，仍保留在 Drive checkpoints/ 中。
-!cd "{DRIVE}" && rm -f colab_outputs.zip && zip -q -r colab_outputs.zip \
-    models colab_metrics.json training_gates.json manifest.json checkpoints/*/history.json \
-    && ls -lh colab_outputs.zip
-print(f'从 Google Drive 下载 {DRIVE}/colab_outputs.zip 即可。')
+import datetime as dt
+import hashlib
+import zipfile
+
+handoff = Path(WORK) / 'rtse_handoff'
+if handoff.exists():
+    shutil.rmtree(handoff)
+(handoff / 'results').mkdir(parents=True)
+(handoff / 'checkpoints').mkdir(parents=True)
+(handoff / 'models').mkdir(parents=True)
+
+required = {
+    'models': Path(MODEL_DIR),
+    'testsets': Path(TESTSETS_DIR),
+    'colab_metrics': Path(DRIVE) / 'colab_metrics.json',
+    'training_gates': Path(DRIVE) / 'training_gates.json',
+    'data_manifest': Path(DRIVE) / 'manifest.json',
+}
+missing = [f'{name}: {path}' for name, path in required.items() if not path.exists()]
+assert not missing, '回传包缺少必要产物：\n' + '\n'.join(missing)
+
+shutil.copytree(required['testsets'], handoff / 'data' / 'testsets')
+shutil.copy2(required['colab_metrics'], handoff / 'results' / 'colab_metrics.json')
+shutil.copy2(required['training_gates'], handoff / 'results' / 'training_gates.json')
+shutil.copy2(required['data_manifest'], handoff / 'results' / 'manifest.json')
+
+# 只打包本轮配置中实际训练的模型，防止Drive里残留的旧权重/checkpoint混入。
+export_info = Path(MODEL_DIR) / 'export_info.json'
+dnsmos_dir = Path(MODEL_DIR) / 'dnsmos'
+assert export_info.exists(), '缺少ONNX导出验证信息 export_info.json'
+assert (dnsmos_dir / 'sig_bak_ovr.onnx').exists(), '缺少DNSMOS模型'
+shutil.copy2(export_info, handoff / 'models' / 'export_info.json')
+shutil.copytree(dnsmos_dir, handoff / 'models' / 'dnsmos')
+for name in MODELS:
+    onnx_path = Path(MODEL_DIR) / f'{name}.onnx'
+    assert onnx_path.exists(), f'{name} ONNX不存在'
+    shutil.copy2(onnx_path, handoff / 'models' / onnx_path.name)
+    src = Path(CKPT_DIR) / name
+    assert (src / 'best.pt').exists() and (src / 'last.pt').exists(), f'{name} checkpoint不完整'
+    shutil.copytree(src, handoff / 'checkpoints' / name)
+
+files = sorted(p for p in handoff.rglob('*') if p.is_file())
+handoff_meta = {
+    'schema_version': 1,
+    'created_utc': dt.datetime.now(dt.timezone.utc).isoformat(),
+    'smoke_run': SMOKE_RUN,
+    'models': list(MODELS),
+    'file_count_without_manifest': len(files),
+    'files': [
+        {
+            'path': p.relative_to(handoff).as_posix(),
+            'bytes': p.stat().st_size,
+            'sha256': hashlib.sha256(p.read_bytes()).hexdigest(),
+        }
+        for p in files
+    ],
+}
+(handoff / 'HANDOFF_MANIFEST.json').write_text(
+    json.dumps(handoff_meta, ensure_ascii=False, indent=1), encoding='utf-8')
+
+archive = Path(DRIVE) / 'rtse_handoff.zip'
+archive.unlink(missing_ok=True)
+with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+    for path in sorted(p for p in handoff.rglob('*') if p.is_file()):
+        zf.write(path, Path('rtse_handoff') / path.relative_to(handoff))
+
+print(f'✓ 完整回传包: {archive}')
+print(f'  文件 {len(files) + 1} 个，压缩后 {archive.stat().st_size / 2**20:.1f} MB')
+print('下载这一个ZIP即可；解压后把 rtse_handoff/ 内各目录合并到仓库根目录。')
 """)
     _save("03_export_eval.ipynb", nb)
 

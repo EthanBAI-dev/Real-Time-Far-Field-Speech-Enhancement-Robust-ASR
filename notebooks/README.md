@@ -120,7 +120,7 @@ WenetSpeech 真实集另按短/中/长三档取30条冒烟或300条正式样本�
 |---|---|---|---|
 | 1 | `01_data_prep.ipynb` | 下载 DNS + AISHELL + WenetSpeech，生成三套固定测试集 | `manifest.json`、`testsets_v1.zip` |
 | 2 | `02_train.ipynb` | 训练 2~3 档 CRN 模型 | `checkpoints/*/best.pt` |
-| 3 | `03_export_eval.ipynb` | 导出流式 ONNX + 只在 DNS 客观集算 PESQ | `models/*.onnx`、`colab_metrics.json` |
+| 3 | `03_export_eval.ipynb` | 导出流式 ONNX、DNS客观评测、统一打包回传 | `rtse_handoff.zip` |
 
 每个 notebook 前几个 cell 固定：挂载 Drive → 配置 → 安装代码 → 自检。
 **自检不要跳** —— 它验证 Colab 侧与本地是同一条信号链路
@@ -196,40 +196,7 @@ DNS 噪声/RIR 用合成的顶替——被验证的是**代码逻辑**不是数�
 
 ---
 
-## 旧单测试集的 Colab 实跑记录（2026-08-17，历史诊断）
-
-> 下列750条 WenetSpeech 混合集已经被 V1 三测试集取代。数字保留用于说明为什么改版，
-> 不再作为正式结果或新 notebook 的预期产物。
-
-`01_data_prep.ipynb` 完整跑通。关键数字：
-
-| 项目 | 实测 |
-|---|---|
-| 语音（DNS5 partaa 部分解压） | **14279 条**，318 位说话人 → train 287 / val 31 |
-| 噪声 | 24000 条 → 稳态 **2064** / 非稳态 **1926**（抽样 4000 条分类） |
-| 真实 RIR | **60248 条** |
-| 测试集 | 750 条，313 MB，时长 3.03~14.91 s |
-| SNR 标称 vs 实测 | 五档**偏差全部 +0.00 dB**，单调性通过 |
-| 合成 RIR RT60 标称 vs 实测 | 0.2→0.194 / 0.4→0.476 / 0.6→0.709 / 0.8→0.910 |
-| 下载+解压总耗时 | 20.3 分钟（压缩包已缓存在 Drive） |
-
-**三个待验证项的结论**：
-
-- ✅ **说话人提取正常**：318 位，`reader_(\d+)` 正则有效，自检断言通过
-- ✅ **平稳性门限 9.0 dB 直接可用**：2064 / 1926，几乎完美平衡，**不需要重标**
-- ✅ **整片解压结构与 `scan()` 递归扫描相容**
-
-> ⚠️ **但暴露了一个新问题**：真实 RIR 实测 RT60 是 **0.09~5.28 s，中位数 2.20 s**，
-> 而合成扫描只到 0.91 s。两层的混响强度差了 2.4 倍，
-> "合成 vs 真实"的对比因此掺了两个变量，结论无法归因。
-> 详见 [`FINDINGS.md`](../docs/FINDINGS.md) F-09。
-
-`02_train.ipynb` 训练中（crn-nano 第 32/60 epoch，val SI-SDR 14.01 dB，约 340 秒/epoch）。
-`03_export_eval.ipynb` 尚未运行。
-
----
-
-## 实跑中修掉的 5 个问题
+## 实跑中修掉的问题
 
 全部是**只有真跑才会暴露**的，详见 [`ISSUES.md`](../docs/ISSUES.md)：
 
@@ -249,7 +216,9 @@ SNR 单调性断言、校验从磁盘读 `index.json` 而非内存变量。
 
 ---
 
-## 尚未验证的部分
+## 当前验证状态
 
-- `03_export_eval.ipynb` 整条链路（ONNX 导出三层校验、PESQ、DNSMOS）
-- 本地 `rtse-eval` 在新测试集上的 CER 评测
+- `01`：V1三套冒烟测试集已在Colab生成并通过SNR/RT60/结构校验；
+- `02`：Nano 3 epoch训练、checkpoint恢复、训练闸门均跑通（质量未达标属预期诊断）；
+- `03`：ONNX三层一致性、DNS客观指标与统一handoff打包逻辑已验证；
+- 本地：DNS客观指标、AISHELL受控CER、WenetSpeech真实会议CER均已跑通。

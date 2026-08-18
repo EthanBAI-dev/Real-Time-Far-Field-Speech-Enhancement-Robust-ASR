@@ -44,16 +44,16 @@ def _build(method: str, model_dir: Path):
     return OnnxEnhancer(model_dir / f"{method}.onnx")
 
 
-#: 旧版单测试集的默认分层维度。新版数据集应在 ``index.json`` 里显式写
-#: ``strata``；保留这个默认值是为了让已有 ``data/testset`` 仍可读取。
+#: 受控测试集的标准分层维度。每套V1数据仍必须在 ``index.json`` 显式声明，
+#: 这里仅作为低层辅助函数和单元测试的默认参数。
 STRATA = ("snr", "noise_kind", "rir_kind")
 
 
 def _dataset_strata(idx: dict) -> tuple[str, ...]:
-    """读取数据集自己声明的分层字段；旧索引退回 ``STRATA``。"""
+    """读取数据集自己声明的分层字段；V1禁止猜测或兼容旧索引。"""
     raw = idx.get("strata")
     if raw is None:
-        return STRATA
+        raise ValueError("V1 index.json 必须显式声明 strata，旧单测试集不再兼容")
     if not isinstance(raw, list) or not raw or not all(isinstance(k, str) and k for k in raw):
         raise ValueError("index.json 的 strata 必须是非空字符串列表")
     if len(set(raw)) != len(raw):
@@ -150,7 +150,7 @@ def main() -> int:
                    help="逗号分隔。默认 = none + 三种 DSP + **--models 目录下实际存在的**"
                         " *.onnx。不写死清单：硬编码的模型名和磁盘内容一旦不一致，"
                         "评测会在跑到那个方法时才崩（和 I-29 同类问题）")
-    p.add_argument("--out", default="results/local_metrics.json")
+    p.add_argument("--out", default="results/aishell_controlled_eval.json")
     p.add_argument("--limit", type=int, help="只跑前 N 条（调试用）")
     p.add_argument("--skip-cer", action="store_true", help="跳过 CER（只算客观指标，快很多）")
     p.add_argument("--skip-objective", action="store_true",
@@ -164,12 +164,10 @@ def main() -> int:
     args = p.parse_args()
 
     root = Path(args.testset)
-    # 兼容旧目录：没有显式传路径、而新版目录尚未下载时，仍能读取 data/testset。
-    if (args.testset == "data/testsets/aishell_controlled"
-            and not (root / "index.json").exists()
-            and Path("data/testset/index.json").exists()):
-        root = Path("data/testset")
-        console.print("[yellow]新版默认测试集不存在，退回旧目录 data/testset。[/yellow]")
+    if not (root / "index.json").exists():
+        console.print(f"[red]找不到V1测试集索引：{root / 'index.json'}[/red]")
+        console.print("请从 rtse_handoff.zip 恢复 data/testsets/，不再回退到旧 data/testset。")
+        return 1
     model_dir = Path(args.models)
     idx = json.loads((root / "index.json").read_text(encoding="utf-8"))
     records = idx["records"]
@@ -182,8 +180,7 @@ def main() -> int:
     if args.methods:
         methods = [m.strip() for m in args.methods.split(",") if m.strip()]
     else:
-        # 自动发现：只扫顶层 *.onnx。子目录（如 models/_stale_v1/、models/dnsmos/）
-        # 刻意不扫 —— 那是放"不该参与本轮对比"的东西的地方。
+        # 自动发现只扫顶层 *.onnx；dnsmos 与 _untrained 等辅助目录刻意不扫。
         found = sorted(q.stem for q in model_dir.glob("*.onnx"))
         methods = ["none", *METHODS_DSP, *found]
         console.print(f"[dim]未指定 --methods，自动发现：{found or '（无 ONNX 模型）'}[/dim]")
@@ -200,7 +197,7 @@ def main() -> int:
     from rtse.vad import build_vad
 
     console.print(f"[bold]测试集[/bold] {root}  {len(records)} 条 × {len(methods)} 方法")
-    console.print(f"[dim]用途={idx.get('purpose', 'legacy')}  分层={strata}[/dim]")
+    console.print(f"[dim]用途={idx.get('purpose', 'unknown')}  分层={strata}[/dim]")
 
     # ── 断点续跑 ──────────────────────────────────────────────────────────
     # 全量评测要跑近一小时，中途被打断（会话结束、误关终端、断电）是常态。
