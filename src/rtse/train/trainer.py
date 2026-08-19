@@ -227,7 +227,26 @@ class Trainer:
         if weights_only_model:
             return
         self.opt.load_state_dict(ck["opt"])
-        self.scaler.load_state_dict(ck["scaler"])
+        # AMP 的 scaler 状态**只在两侧都启用时才能搬**。
+        # `GradScaler` 被禁用时 `state_dict()` 返回空字典，而空字典喂给
+        # 启用状态的 `load_state_dict()` 会直接抛
+        # "The source state dict is empty..."。
+        #
+        # 这不是假想情况：Colab 切换运行时是常态（GPU 配额用完会被降级到 CPU），
+        # 于是「CPU 那轮存的 last.pt」拿到 GPU 会话里续训就必然炸。
+        # checkpoint 本身没问题——权重、优化器、epoch 全在，只有这一个字段是空的。
+        #
+        # scaler 里只有损失缩放因子这类**每步都会自适应重估**的量，
+        # 丢掉它最多让恢复后的头几步缩放系数重新收敛一次，
+        # 远比"续训直接崩掉"或"为它重下一遍 checkpoint"划算。
+        saved_scaler = ck.get("scaler") or {}
+        if saved_scaler and self.use_amp:
+            self.scaler.load_state_dict(saved_scaler)
+        elif saved_scaler and not self.use_amp:
+            print("  [scaler] checkpoint 存于 AMP 开启时，本次运行在 CPU/无 AMP —— 跳过")
+        elif not saved_scaler and self.use_amp:
+            print("  [scaler] checkpoint 存于无 AMP 时（多半是 CPU 运行时），"
+                  "本次启用 AMP —— 跳过，缩放系数会自行重估")
         self.epoch = ck["epoch"]
         self.step = ck["step"]
         self.best_val = ck.get("best_val", math.inf)

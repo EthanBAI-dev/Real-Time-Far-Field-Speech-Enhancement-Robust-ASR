@@ -1305,4 +1305,55 @@ notebook 里未引用此编号，其内容可能写在另一台机器上、未�
   41 dB SI-SDR 的误差比信号低 41 dB，是听不出来的。
   **绝对差值大 ≠ 有问题，要和判据比，不是和满分比。**
 
+## I-36 · 切换 Colab 运行时后续训崩溃：AMP scaler 状态跨 CPU/GPU 不兼容
+
+- **状态**：✅ 已修复（2026-08-19）
+- **现象**：早上切换过一次运行时，之后 PART 2 一跑就崩：
+
+  ```
+  tr.load(last)   # 断点续训
+  RuntimeError: The source state dict is empty, possibly because it was
+  saved from a disabled instance of GradScaler.
+  ```
+
+- **根因**：`Trainer` 里
+  `use_amp = cfg.amp and device.type == "cuda"`，
+  `scaler = torch.amp.GradScaler("cuda", enabled=use_amp)`。
+  **被禁用的 `GradScaler`，其 `state_dict()` 返回空字典 `{}`**；
+  而空字典喂给**启用**状态的 `load_state_dict()`，PyTorch 直接抛上面那个错。
+
+  于是时间线是：① 某一轮跑在没有 GPU 的运行时上（配额用完被降级，或手滑选了 CPU）
+  → `use_amp=False` → 存下的 `last.pt` 里 `scaler` 字段是 `{}`；
+  ② 换回 GPU 运行时 → `use_amp=True` → 读到空字典 → 崩。
+
+  **checkpoint 本身没坏**——模型权重、优化器状态、epoch、history 全都在，
+  只有 `scaler` 这一个字段是空的。`load()` 无条件搬这个字段，
+  没考虑存档端与加载端的 AMP 开关可能不一致。
+- **为什么必然会撞上**：Colab **切换运行时是常态**（GPU 配额耗尽会自动降级到 CPU），
+  而这个项目的整个断点续训机制就是为"会话随时会断"设计的。
+  也就是说，这条路径是被高频走到的，却从没被验证过跨运行时是否成立。
+- **修复**：`load()` 里按四种组合分别处理，只有**两侧都启用**时才搬 scaler 状态，
+  其余情况跳过并打印原因。scaler 里只有损失缩放因子这类**每步自适应重估**的量，
+  丢掉它最多让恢复后头几步的缩放系数重新收敛一次——
+  远比"续训直接崩"或"为它重下一遍 checkpoint"划算。
+- **测试**（`tests/test_checkpoint_portability.py`）：四种存/读组合 + 权重逐值比对。
+
+  但**第一版测试是假通过的**，值得单独记一笔：本机与 CI 都没有 CUDA，
+  `GradScaler("cuda", enabled=True)` 会**自动降级为禁用**并打一条 UserWarning，
+  于是四种组合跑的全是"禁用↔禁用"这一条路径，
+  `load_state_dict({})` 根本不会抛错——**全绿，却一个字节的 bug 都没碰到**。
+
+  改成用一个**强制表现为启用**的替身 scaler（复刻上游对空字典抛错的行为），
+  并加了一条 `test_the_failure_mode_is_actually_reproducible_here`
+  专门守住"这套替身确实能复现那个错误"这个前提。
+  最后**撤掉修复实跑验证**：确实抛出与线上完全相同的 RuntimeError，恢复后全绿。
+- **教训**：**"在没有 X 的机器上测试依赖 X 的行为"是个静默失效的陷阱。**
+  PyTorch 这里选择了"优雅降级 + 警告"，对运行时是友好的，
+  对测试却是致命的——它把"没测到"伪装成了"测过且通过"。
+  凡是测试里出现"强制启用某个依赖硬件的特性"，都要先证明**那个特性真的启用了**，
+  否则测的是降级路径。这跟之前 `car` 型噪声那条靠固定种子碰巧通过的测试
+  是同一类问题：**通过的测试必须能解释它为什么会失败**。
+
+---
+
 <!-- 后续条目在此追加 -->
