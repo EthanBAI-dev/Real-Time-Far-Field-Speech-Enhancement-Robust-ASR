@@ -1,0 +1,44 @@
+{
+ "model": "crn-nano",
+ "checkpoint": "checkpoints/crn-nano/best.pt",
+ "epochs": 25,
+ "val_si_sdr": 19.928,
+ "onnx": "models/crn-nano.onnx",
+ "onnx_verification_max_abs_err": 2.2649765e-06,
+ "measured_locally": "2026-08-19",
+ "note": "本地用 ONNX 流式路径在 V1 三套测试集上复算；Colab 侧闸门用的是训练域 val 数据，口径不同",
+ "gates": {
+  "clean_passthrough_si_sdr_dns_median": 37.81,
+  "clean_passthrough_si_sdr_aishell_median": 16.17,
+  "noisy_delta_si_sdr_dns_mean": 2.82,
+  "noisy_delta_si_sdr_dns_ci95": [
+   2.04,
+   3.61
+  ],
+  "threshold_clean": 20.0,
+  "threshold_delta": 0.0,
+  "passed_on_training_domain": true,
+  "passed_out_of_domain": false
+ },
+ "cer": {
+  "aishell_controlled": {
+   "none": 0.379,
+   "clean_upper": 0.088,
+   "crn-nano": 0.531,
+   "delta": 0.154,
+   "ci95": [
+    0.099,
+    0.211
+   ]
+  },
+  "wenetspeech_real": {
+   "none": 0.199,
+   "crn-nano": 0.301,
+   "delta": 0.101,
+   "ci95": [
+    0.033,
+    0.169
+   ]
+  }
+ }
+}
